@@ -270,12 +270,6 @@ export default function Home() {
       <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-12 md:flex-row md:gap-12">
         <div className="flex flex-1 flex-col gap-4">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-emerald-700/80">
-                Chess Helper
-              </p>
-              <h1 className="text-3xl font-semibold text-emerald-900">Play + Get Best Moves</h1>
-            </div>
             <div className="flex items-center whitespace-nowrap gap-3">
               <div className="rounded-full border border-emerald-300 bg-white shadow-sm p-1">
                 <button
