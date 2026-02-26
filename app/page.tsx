@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   formatMove,
   gameStatus,
@@ -15,6 +15,7 @@ import {
   type Move,
   type PieceType,
   type Color,
+  type ScoredMove,
 } from "@/lib/chessEngine";
 
 const pieceName: Record<PieceType, string> = {
@@ -55,12 +56,14 @@ const Board = ({
   onFreeMove,
   perspective,
   freeMode,
+  arrows = [],
 }: {
   state: GameState;
   onMove: (move: Move) => void;
   onFreeMove: (from: number, to: number) => void;
   perspective: "w" | "b";
   freeMode: boolean;
+  arrows?: { from: number; to: number; color: Color; label: string }[];
 }) => {
   const [selected, setSelected] = useState<number | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
@@ -168,8 +171,78 @@ const Board = ({
   };
 
   return (
-    <div className="grid grid-cols-8 overflow-hidden rounded-2xl border border-slate-800/50 shadow-2xl shadow-emerald-500/10 backdrop-blur">
-      {order.map((idx) => renderSquare(idx))}
+    <div className="relative">
+      <div className="grid grid-cols-8 overflow-hidden rounded-2xl border border-slate-800/50 shadow-2xl shadow-emerald-500/10 backdrop-blur">
+        {order.map((idx) => renderSquare(idx))}
+      </div>
+      {arrows.length > 0 && (
+        <svg
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+        >
+          <defs>
+            <marker id="arrowhead-white" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <polygon points="0 0, 6 3, 0 6" fill="#10b981" />
+            </marker>
+            <marker id="arrowhead-black" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <polygon points="0 0, 6 3, 0 6" fill="#f43f5e" />
+            </marker>
+          </defs>
+          {arrows.map((a, i) => {
+            const { row: fromRow, col: fromCol } = { row: Math.floor(a.from / 8), col: a.from % 8 };
+            const { row: toRow, col: toCol } = { row: Math.floor(a.to / 8), col: a.to % 8 };
+            const orient = perspective === "w";
+            const displayFromRow = orient ? fromRow : 7 - fromRow;
+            const displayFromCol = orient ? fromCol : 7 - fromCol;
+            const displayToRow = orient ? toRow : 7 - toRow;
+            const displayToCol = orient ? toCol : 7 - toCol;
+            const x1 = (displayFromCol + 0.5) * (100 / 8);
+            const y1 = (displayFromRow + 0.5) * (100 / 8);
+            const x2 = (displayToCol + 0.5) * (100 / 8);
+            const y2 = (displayToRow + 0.5) * (100 / 8);
+            // Shorten line so arrowhead sits nicely inside squares
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            const offset = 2; // percentage units
+            const nx1 = x1 + (dx / len) * offset;
+            const ny1 = y1 + (dy / len) * offset;
+            const nx2 = x2 - (dx / len) * offset;
+            const ny2 = y2 - (dy / len) * offset;
+            const color = a.color === "w" ? "#10b981" : "#f43f5e";
+            const marker = a.color === "w" ? "url(#arrowhead-white)" : "url(#arrowhead-black)";
+            return (
+              <g key={`${a.from}-${a.to}-${i}`}>
+                <line
+                  x1={nx1}
+                  y1={ny1}
+                  x2={nx2}
+                  y2={ny2}
+                  stroke={color}
+                  strokeWidth={1.6}
+                  markerEnd={marker}
+                  opacity={0.9}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <text
+                  x={(nx1 + nx2) / 2}
+                  y={(ny1 + ny2) / 2 - 1.5}
+                  textAnchor="middle"
+                  fontSize="3.2"
+                  fill="#0f172a"
+                  stroke="white"
+                  strokeWidth="0.6"
+                  paintOrder="stroke"
+                >
+                  {a.label}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      )}
     </div>
   );
 };
@@ -195,9 +268,26 @@ export default function Home() {
   >([]);
   const [engineOptionsSent, setEngineOptionsSent] = useState(false);
   const [engineError, setEngineError] = useState<string | null>(null);
-  const [engineWorker, setEngineWorker] = useState<Worker | null>(null);
+  const engineWorkerRef = useRef<Worker | null>(null);
   const [autoAnalyze, setAutoAnalyze] = useState(true);
   const [lastAnalyzedFen, setLastAnalyzedFen] = useState<string | null>(null);
+  const topWhiteMoves = useMemo<ScoredMove[]>(() => {
+    const asWhite: GameState = { ...state, turn: "w" };
+    return scoreMoves(asWhite, 3).slice(0, 3);
+  }, [state]);
+
+  const topBlackMoves = useMemo<ScoredMove[]>(() => {
+    const asBlack: GameState = { ...state, turn: "b" };
+    return scoreMoves(asBlack, 3).slice(0, 3);
+  }, [state]);
+
+  const previewArrows = useMemo(
+    () => [
+      ...topWhiteMoves.map((s, i) => ({ from: s.move.from, to: s.move.to, color: "w" as Color, label: `W${i + 1}` })),
+      ...topBlackMoves.map((s, i) => ({ from: s.move.from, to: s.move.to, color: "b" as Color, label: `B${i + 1}` })),
+    ],
+    [topWhiteMoves, topBlackMoves],
+  );
 
   const scoredMoves = useMemo(() => scoreMoves(state, 3), [state]);
   const bestMoves = useMemo(() => scoredMoves.slice(0, 20), [scoredMoves]);
@@ -297,10 +387,11 @@ export default function Home() {
 
     worker.postMessage("uci");
     worker.postMessage("isready");
-    setEngineWorker(worker);
+    engineWorkerRef.current = worker;
 
     return () => {
       worker.terminate();
+      engineWorkerRef.current = null;
     };
   }, []);
 
@@ -337,6 +428,7 @@ export default function Home() {
 
   const askEngine = useCallback(
     (depth = 14, rememberFen = true) => {
+      const engineWorker = engineWorkerRef.current;
       if (!engineWorker) return;
       const fen = toFen(state);
       if (rememberFen) setLastAnalyzedFen(fen);
@@ -349,7 +441,7 @@ export default function Home() {
       engineWorker.postMessage(`position fen ${fen}`);
       engineWorker.postMessage(`go multipv 20 depth ${depth}`);
     },
-    [engineWorker, state],
+    [state],
   );
 
   const playMove = (move: Move) => {
@@ -374,6 +466,7 @@ export default function Home() {
     if (!autoAnalyze || !engineReady || engineThinking) return;
     const fen = toFen(state);
     if (fen === lastAnalyzedFen) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     askEngine(14, true);
   }, [autoAnalyze, engineReady, engineThinking, state, lastAnalyzedFen, askEngine]);
 
@@ -505,6 +598,7 @@ export default function Home() {
               onFreeMove={freeMode ? freeMove : () => { }}
               perspective={playerColor}
               freeMode={freeMode}
+              arrows={previewArrows}
             />
             {freeMode && (
               <div
