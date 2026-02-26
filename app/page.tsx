@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   formatMove,
   gameStatus,
@@ -10,6 +10,7 @@ import {
   moveKey,
   squareLabel,
   scoreMoves,
+  toFen,
   type GameState,
   type Move,
   type PieceType,
@@ -181,6 +182,15 @@ export default function Home() {
   const [movePanel, setMovePanel] = useState<"best" | "blunder">("best");
   const [history, setHistory] = useState<string[]>([]);
   const [freeMode, setFreeMode] = useState(false);
+  const [engineReady, setEngineReady] = useState(false);
+  const [engineThinking, setEngineThinking] = useState(false);
+  const [engineLine, setEngineLine] = useState<{
+    bestmove: string;
+    depth: number;
+    score: string;
+    pv: string[];
+  } | null>(null);
+  const [engineWorker, setEngineWorker] = useState<Worker | null>(null);
 
   const scoredMoves = useMemo(() => scoreMoves(state, 3), [state]);
   const bestMoves = useMemo(() => scoredMoves.slice(0, 20), [scoredMoves]);
@@ -193,6 +203,114 @@ export default function Home() {
   const canUndo = cursor > 0;
   const canRedo = cursor < states.length - 1;
   const visibleHistory = history.slice(0, cursor);
+
+  useEffect(() => {
+    const worker = new Worker("/stockfish-18-lite.js");
+
+    worker.onmessage = (event) => {
+      const payload = event.data ?? "";
+      const line = typeof payload === "string" ? payload : payload.line ?? "";
+      if (!line) return;
+
+      if (line.includes("uciok") || line.includes("readyok")) {
+        setEngineReady(true);
+      }
+
+      if (line.startsWith("info ")) {
+        const parts = line.split(" ");
+        const depthIdx = parts.indexOf("depth");
+        const scoreIdx = parts.indexOf("score");
+        const pvIdx = parts.indexOf("pv");
+
+        const depth = depthIdx >= 0 ? Number(parts[depthIdx + 1]) : undefined;
+        let scoreText: string | null = null;
+        if (scoreIdx >= 0) {
+          const scoreType = parts[scoreIdx + 1];
+          const raw = Number(parts[scoreIdx + 2]);
+          if (scoreType === "cp") scoreText = (raw / 100).toFixed(2);
+          if (scoreType === "mate") scoreText = `Mate in ${raw}`;
+        }
+        const pv = pvIdx >= 0 ? parts.slice(pvIdx + 1) : [];
+
+        if (depth !== undefined && scoreText !== null) {
+          setEngineLine((prev) => {
+            if (prev && depth < prev.depth) return prev;
+            return {
+              bestmove: prev?.bestmove ?? "",
+              depth,
+              score: scoreText ?? prev?.score ?? "0.00",
+              pv,
+            };
+          });
+        }
+      }
+
+      if (line.startsWith("bestmove")) {
+        const tokens = line.split(" ");
+        const bestmove = tokens[1];
+        setEngineThinking(false);
+        setEngineLine((prev) => ({
+          bestmove,
+          depth: prev?.depth ?? 0,
+          score: prev?.score ?? "0.00",
+          pv: prev?.pv?.length ? prev.pv : [bestmove],
+        }));
+      }
+    };
+
+    worker.postMessage("uci");
+    worker.postMessage("isready");
+    setEngineWorker(worker);
+
+    return () => {
+      worker.terminate();
+    };
+  }, []);
+
+  const uciToMove = useCallback(
+    (uci: string): Move | null => {
+      if (!uci || uci.length < 4) return null;
+      const fileFrom = uci.charCodeAt(0) - 97;
+      const rankFrom = Number(uci[1]);
+      const fileTo = uci.charCodeAt(2) - 97;
+      const rankTo = Number(uci[3]);
+      if (
+        Number.isNaN(rankFrom) ||
+        Number.isNaN(rankTo) ||
+        fileFrom < 0 ||
+        fileFrom > 7 ||
+        fileTo < 0 ||
+        fileTo > 7
+      ) {
+        return null;
+      }
+
+      const from = (8 - rankFrom) * 8 + fileFrom;
+      const to = (8 - rankTo) * 8 + fileTo;
+      const promoChar = uci[4];
+      const promotion = promoChar ? (promoChar as PieceType) : undefined;
+
+      const legal = generateLegalMoves(state).find(
+        (m) => m.from === from && m.to === to && (!m.promotion || m.promotion === promotion),
+      );
+      return legal ? { ...legal, promotion: promotion ?? legal.promotion } : null;
+    },
+    [state],
+  );
+
+  const askEngine = useCallback(
+    (depth = 14) => {
+      if (!engineWorker) return;
+      const fen = toFen(state);
+      setEngineThinking(true);
+      setEngineLine(null);
+      engineWorker.postMessage("stop");
+      engineWorker.postMessage("ucinewgame");
+      engineWorker.postMessage(`position fen ${fen}`);
+      engineWorker.postMessage(`go depth ${depth}`);
+    },
+    [engineWorker, state],
+  );
 
   const playMove = (move: Move) => {
     const current = state;
@@ -274,32 +392,29 @@ export default function Home() {
               <div className="rounded-full border border-emerald-300 bg-white shadow-sm p-1">
                 <button
                   onClick={() => setPlayerColor("w")}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                    playerColor === "w"
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${playerColor === "w"
                       ? "bg-emerald-500 text-white shadow"
                       : "text-emerald-700 hover:text-emerald-900"
-                  }`}
+                    }`}
                 >
                   I am White
                 </button>
                 <button
                   onClick={() => setPlayerColor("b")}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                    playerColor === "b"
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${playerColor === "b"
                       ? "bg-emerald-500 text-white shadow"
                       : "text-emerald-700 hover:text-emerald-900"
-                  }`}
+                    }`}
                 >
                   I am Black
                 </button>
               </div>
               <button
                 onClick={() => setFreeMode((v) => !v)}
-                className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
-                  freeMode
+                className={`rounded-full px-3 py-2 text-xs font-semibold transition ${freeMode
                     ? "border border-amber-400 bg-amber-100 text-amber-900 shadow"
                     : "border border-slate-200 text-slate-800 hover:bg-slate-100"
-                }`}
+                  }`}
               >
                 {freeMode ? "Free edit ON" : "Free edit OFF"}
               </button>
@@ -339,7 +454,7 @@ export default function Home() {
               key={cursor}
               state={state}
               onMove={playMove}
-              onFreeMove={freeMode ? freeMove : () => {}}
+              onFreeMove={freeMode ? freeMove : () => { }}
               perspective={playerColor}
               freeMode={freeMode}
             />
@@ -370,17 +485,15 @@ export default function Home() {
             <div className="grid grid-cols-2 overflow-hidden rounded-full border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-900">
               <button
                 onClick={() => setMovePanel("best")}
-                className={`px-3 py-1 transition ${
-                  movePanel === "best" ? "bg-emerald-500 text-white shadow" : "hover:bg-emerald-100"
-                }`}
+                className={`px-3 py-1 transition ${movePanel === "best" ? "bg-emerald-500 text-white shadow" : "hover:bg-emerald-100"
+                  }`}
               >
                 Best (20)
               </button>
               <button
                 onClick={() => setMovePanel("blunder")}
-                className={`px-3 py-1 transition ${
-                  movePanel === "blunder" ? "bg-rose-500 text-white shadow" : "hover:bg-rose-100"
-                }`}
+                className={`px-3 py-1 transition ${movePanel === "blunder" ? "bg-rose-500 text-white shadow" : "hover:bg-rose-100"
+                  }`}
               >
                 Blunders (20)
               </button>
@@ -394,11 +507,10 @@ export default function Home() {
                 const list = movePanel === "best" ? bestMoves : blunderMoves;
                 if (list[0]) playMove(list[0].move);
               }}
-              className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
-                movePanel === "best"
+              className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${movePanel === "best"
                   ? "border border-emerald-400 text-emerald-800 hover:bg-emerald-500 hover:text-white"
                   : "border border-rose-300 text-rose-900 hover:bg-rose-500 hover:text-white"
-              }`}
+                }`}
             >
               {movePanel === "best" ? "Play top move" : "Play blunder"}
             </button>
@@ -443,6 +555,61 @@ export default function Home() {
                 </button>
               );
             })}
+          </div>
+
+          <div className="rounded-2xl border border-emerald-200/60 bg-white p-3 text-sm text-emerald-900/80">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-semibold text-emerald-900">Stockfish Lite</p>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${engineReady ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"
+                  }`}
+              >
+                {engineReady ? "Ready" : "Warming up"}
+              </span>
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => askEngine(14)}
+                disabled={!engineReady || engineThinking}
+                className="flex-1 rounded-full border border-emerald-400 px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {engineThinking ? "Thinking..." : "Analyze depth 14"}
+              </button>
+              <button
+                onClick={() => {
+                  if (!engineLine?.bestmove) return;
+                  const move = uciToMove(engineLine.bestmove);
+                  if (move) playMove(move);
+                }}
+                disabled={!engineLine?.bestmove}
+                className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Play suggestion
+              </button>
+            </div>
+
+            <div className="mt-2 space-y-1 text-xs text-emerald-800/80">
+              {engineLine ? (
+                <>
+                  <p>
+                    Best move:{" "}
+                    <span className="font-semibold text-emerald-900">
+                      {engineLine.bestmove || "(pending)"}
+                    </span>{" "}
+                    · depth {engineLine.depth} · eval {engineLine.score}
+                  </p>
+                  {engineLine.pv.length > 0 && (
+                    <p className="text-emerald-800/70">
+                      PV: {engineLine.pv.slice(0, 8).join(" ")}
+                      {engineLine.pv.length > 8 ? " …" : ""}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p>No analysis yet. Hit “Analyze”.</p>
+              )}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-emerald-200/60 bg-white p-3 text-sm text-emerald-900/80">

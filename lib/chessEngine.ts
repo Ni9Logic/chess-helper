@@ -143,6 +143,50 @@ export const squareLabel = (idx: number) => {
   return `${files[col]}${8 - row}`;
 };
 
+export const toFen = (state: GameState): string => {
+  const rows: string[] = [];
+
+  for (let row = 0; row < 8; row += 1) {
+    let empty = 0;
+    let rowStr = "";
+    for (let col = 0; col < 8; col += 1) {
+      const piece = state.board[row * 8 + col];
+      if (!piece) {
+        empty += 1;
+      } else {
+        if (empty > 0) {
+          rowStr += empty.toString();
+          empty = 0;
+        }
+        const symbol = piece.type.toUpperCase();
+        rowStr += piece.color === "w" ? symbol : symbol.toLowerCase();
+      }
+    }
+    if (empty > 0) rowStr += empty.toString();
+    rows.push(rowStr);
+  }
+
+  const castling = (() => {
+    const parts: string[] = [];
+    if (state.castling.wK) parts.push("K");
+    if (state.castling.wQ) parts.push("Q");
+    if (state.castling.bK) parts.push("k");
+    if (state.castling.bQ) parts.push("q");
+    return parts.length ? parts.join("") : "-";
+  })();
+
+  const enPassant = state.enPassant === null ? "-" : squareLabel(state.enPassant);
+
+  return [
+    rows.join("/"),
+    state.turn,
+    castling,
+    enPassant,
+    state.halfmove,
+    state.fullmove,
+  ].join(" ");
+};
+
 const opposite = (color: Color): Color => (color === "w" ? "b" : "w");
 
 const isInside = (row: number, col: number) => row >= 0 && row < 8 && col >= 0 && col < 8;
