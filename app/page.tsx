@@ -196,6 +196,8 @@ export default function Home() {
   const [engineOptionsSent, setEngineOptionsSent] = useState(false);
   const [engineError, setEngineError] = useState<string | null>(null);
   const [engineWorker, setEngineWorker] = useState<Worker | null>(null);
+  const [autoAnalyze, setAutoAnalyze] = useState(true);
+  const [lastAnalyzedFen, setLastAnalyzedFen] = useState<string | null>(null);
 
   const scoredMoves = useMemo(() => scoreMoves(state, 3), [state]);
   const bestMoves = useMemo(() => scoredMoves.slice(0, 20), [scoredMoves]);
@@ -334,9 +336,10 @@ export default function Home() {
   );
 
   const askEngine = useCallback(
-    (depth = 14) => {
+    (depth = 14, rememberFen = true) => {
       if (!engineWorker) return;
       const fen = toFen(state);
+      if (rememberFen) setLastAnalyzedFen(fen);
       setEngineThinking(true);
       setEngineLine(null);
       setEnginePvList([]);
@@ -365,6 +368,14 @@ export default function Home() {
       ];
     });
   };
+
+  // Auto-trigger analysis after each move when enabled and engine is idle.
+  useEffect(() => {
+    if (!autoAnalyze || !engineReady || engineThinking) return;
+    const fen = toFen(state);
+    if (fen === lastAnalyzedFen) return;
+    askEngine(14, true);
+  }, [autoAnalyze, engineReady, engineThinking, state, lastAnalyzedFen, askEngine]);
 
   const undo = () => {
     if (!canUndo) return;
@@ -528,9 +539,22 @@ export default function Home() {
               </span>
             </div>
 
+            <div className="mt-2 flex items-center justify-between gap-2 text-xs font-semibold text-emerald-800">
+              <span>Auto-analyze after each move</span>
+              <button
+                onClick={() => setAutoAnalyze((v) => !v)}
+                className={`rounded-full px-3 py-1 transition ${autoAnalyze
+                    ? "bg-emerald-500 text-white shadow"
+                    : "border border-emerald-200 text-emerald-800 hover:bg-emerald-50"
+                  }`}
+              >
+                {autoAnalyze ? "On" : "Off"}
+              </button>
+            </div>
+
             <div className="mt-3 flex gap-2">
               <button
-                onClick={() => askEngine(14)}
+                onClick={() => askEngine(14, true)}
                 disabled={!engineReady || engineThinking}
                 className="flex-1 rounded-full border border-emerald-400 px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -607,8 +631,7 @@ export default function Home() {
               </div>
             )}
           </div>
-          
-          {/* <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3">
             <h2 className="text-xl font-semibold text-emerald-900">Move explorer</h2>
             <div className="grid grid-cols-2 overflow-hidden rounded-full border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-900">
               <button
@@ -626,9 +649,9 @@ export default function Home() {
                 Blunders (20)
               </button>
             </div>
-          </div> */}
+          </div>
 
-          {/* <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <button
               disabled={movePanel === "best" ? !bestMoves.length : !blunderMoves.length}
               onClick={() => {
@@ -683,7 +706,7 @@ export default function Home() {
                 </button>
               );
             })}
-          </div> */}
+          </div>
 
           
 
