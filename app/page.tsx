@@ -271,6 +271,7 @@ export default function Home() {
   const engineWorkerRef = useRef<Worker | null>(null);
   const [autoAnalyze, setAutoAnalyze] = useState(true);
   const [lastAnalyzedFen, setLastAnalyzedFen] = useState<string | null>(null);
+  const [accuracyTarget, setAccuracyTarget] = useState(90); // 50-100 scale for user intent
   const topWhiteMoves = useMemo<ScoredMove[]>(() => {
     const asWhite: GameState = { ...state, turn: "w" };
     return scoreMoves(asWhite, 3).slice(0, 3);
@@ -290,6 +291,12 @@ export default function Home() {
   );
 
   const scoredMoves = useMemo(() => scoreMoves(state, 3), [state]);
+  const accuracyFriendlyMoves = useMemo(() => {
+    if (scoredMoves.length === 0) return [];
+    const bestScore = scoredMoves[0].score;
+    const maxDrop = Math.max(10, (100 - accuracyTarget) * 5); // e.g. 90 -> 50cp, 80 -> 100cp
+    return scoredMoves.filter((s) => bestScore - s.score <= maxDrop).slice(0, 10);
+  }, [scoredMoves, accuracyTarget]);
   const bestMoves = useMemo(() => scoredMoves.slice(0, 20), [scoredMoves]);
   const blunderMoves = useMemo(() => {
     if (scoredMoves.length <= 20) return [...scoredMoves].reverse();
@@ -646,6 +653,24 @@ export default function Home() {
               </button>
             </div>
 
+            <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+              <div className="flex items-center justify-between font-semibold">
+                <span>Accuracy target</span>
+                <span>{accuracyTarget}%</span>
+              </div>
+              <input
+                type="range"
+                min={50}
+                max={100}
+                value={accuracyTarget}
+                onChange={(e) => setAccuracyTarget(Number(e.target.value))}
+                className="mt-2 h-2 w-full cursor-pointer accent-emerald-500"
+              />
+              <p className="mt-1 text-[11px] text-emerald-800/80">
+                Shows moves within a small eval drop of the best line so you can play to that level.
+              </p>
+            </div>
+
             <div className="mt-3 flex gap-2">
               <button
                 onClick={() => askEngine(14, true)}
@@ -800,6 +825,41 @@ export default function Home() {
                 </button>
               );
             })}
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-800">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold text-slate-900">Accuracy-friendly moves</p>
+              <span className="text-[11px] font-semibold text-emerald-700">Δcp ≤ ~{Math.max(10, (100 - accuracyTarget) * 5)} </span>
+            </div>
+            {accuracyFriendlyMoves.length === 0 ? (
+              <p className="mt-1 text-slate-700/70">No moves within your target. Consider relaxing accuracy.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {accuracyFriendlyMoves.map((item, i) => {
+                  const drop = (accuracyFriendlyMoves[0].score - item.score);
+                  return (
+                    <div
+                      key={`${moveKey(item.move)}-acc-${i}`}
+                      className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs"
+                    >
+                      <div>
+                        <p className="font-semibold text-emerald-900">
+                          {i + 1}. {formatMove(item.move)}
+                        </p>
+                        <p className="text-emerald-800/70">Eval: {(item.score / 100).toFixed(2)} · Drop {drop.toFixed(0)}cp</p>
+                      </div>
+                      <button
+                        onClick={() => playMove(item.move)}
+                        className="rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white shadow hover:bg-emerald-400"
+                      >
+                        Play
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           
