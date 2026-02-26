@@ -33,6 +33,7 @@ export const metadata: Metadata = {
     "chess analysis",
     "openings",
     "tactics",
+    "chess board"
   ],
   authors: [{ name: "Chess Helper" }],
   creator: "Chess Helper",
@@ -67,8 +68,8 @@ export const metadata: Metadata = {
     googleBot: {
       index: true,
       follow: true,
-      maxImagePreview: "large",
-      maxVideoPreview: -1,
+      "max-image-preview": "large",
+      "max-video-preview": -1,
     },
   },
   category: "games",
