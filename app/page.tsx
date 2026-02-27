@@ -20,6 +20,7 @@ import {
   type Color,
   type ScoredMove,
 } from "@/lib/chessEngine";
+import { fenToState } from "@/lib/fen";
 
 type SidebarTab = "guide" | "engine" | "history";
 
@@ -316,6 +317,17 @@ export default function Home() {
   const [accuracyTarget, setAccuracyTarget] = useState(90); // 50-100 scale for user intent
   const [moves, setMoves] = useState<Move[]>([]);
   const [lastMove, setLastMove] = useState<{ from: number; to: number } | null>(null);
+  type LiveAnalysis = {
+    type: "analysis";
+    source: string;
+    tabId: number | null;
+    fen: string;
+    generatedAt: number;
+    id: string;
+    bestMoves: { uci: string; score: string; depth: number; pv: string[] }[];
+  };
+  const [liveAnalysis, setLiveAnalysis] = useState<LiveAnalysis | null>(null);
+  const [streamStatus, setStreamStatus] = useState<"idle" | "open" | "error">("idle");
   const topWhiteMoves = useMemo<ScoredMove[]>(() => {
     const asWhite: GameState = { ...state, turn: "w" };
     return scoreMoves(asWhite, 3).slice(0, 3);
@@ -447,6 +459,23 @@ export default function Home() {
       engineWorkerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const es = new EventSource("/api/stream");
+    es.onopen = () => setStreamStatus("open");
+    es.onerror = () => setStreamStatus("error");
+    es.onmessage = (ev) => {
+      try {
+        const payload = JSON.parse(ev.data ?? "{}");
+        if (payload?.type === "analysis") {
+          setLiveAnalysis(payload);
+        }
+      } catch {
+        // ignore parse errors
+      }
+    };
+    return () => es.close();
   }, []);
 
   const uciToMove = useCallback(
@@ -627,6 +656,17 @@ export default function Home() {
     setSelectedPiece({ color: "w", type: "p" });
   };
 
+  const loadLivePosition = () => {
+    if (!liveAnalysis?.fen) return;
+    const parsed = fenToState(liveAnalysis.fen);
+    if (!parsed) return;
+    setStates([parsed]);
+    setCursor(0);
+    setHistory([]);
+    setMoves([]);
+    setLastMove(null);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50 text-slate-900">
       <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-12 md:flex-row md:gap-12">
@@ -802,6 +842,54 @@ export default function Home() {
         </div>
 
         <aside className="w-full max-w-md space-y-4 rounded-3xl border border-emerald-200/60 bg-white/90 p-5 shadow-xl shadow-emerald-100">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 text-sm text-emerald-900 shadow-inner">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold">Live Tab Trainer</p>
+              <span
+                className={`h-2 w-2 rounded-full ${streamStatus === "open"
+                  ? "bg-emerald-500"
+                  : streamStatus === "error"
+                    ? "bg-rose-500"
+                    : "bg-amber-400"
+                  }`}
+                title={streamStatus}
+              />
+            </div>
+            <p className="mt-1 text-xs text-emerald-800/80">
+              Requires Chrome extension (load from /tmp/chess-trainer-ext). Opens SSE to receive best moves from your active chess.com tab.
+            </p>
+            {liveAnalysis ? (
+              <div className="mt-2 space-y-2">
+                <div className="flex items-center justify-between rounded-xl bg-white/80 px-3 py-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-emerald-700">Best move</p>
+                    <p className="text-sm font-semibold text-emerald-900">{liveAnalysis?.bestMoves?.[0]?.uci ?? "…"}</p>
+                  </div>
+                  <div className="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold text-emerald-800">
+                    {liveAnalysis?.bestMoves?.[0]?.score ?? "–"}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={loadLivePosition}
+                    className="flex-1 rounded-full border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                  >
+                    Load position to board
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (liveAnalysis?.fen) navigator.clipboard?.writeText(liveAnalysis.fen);
+                    }}
+                    className="rounded-full border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                  >
+                    Copy FEN
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-emerald-800/70">Waiting for first analysis… move a piece on chess.com.</p>
+            )}
+          </div>
           <div className="grid grid-cols-3 overflow-hidden rounded-full border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-900">
             {([
               ["guide", "Guide"],

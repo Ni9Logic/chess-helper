@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "dev:ext": "rm -rf /tmp/chess-trainer-ext && mkdir -p /tmp/chess-trainer-ext && cp -r extension/* /tmp/chess-trainer-ext/"
   },
   "dependencies": {
     "next": "16.1.6",

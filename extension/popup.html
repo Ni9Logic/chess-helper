@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Chess Trainer</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Trainer</h1>
+        <span id="status-dot" class="dot gray"></span>
+      </header>
+
+      <label class="row">
+        <input type="checkbox" id="enabled" />
+        <div>
+          <div class="title">Enabled</div>
+          <div class="hint">Send FEN and draw overlay</div>
+        </div>
+      </label>
+
+      <label class="row">
+        <input type="checkbox" id="autoAnalyze" />
+        <div>
+          <div class="title">Auto analyze</div>
+          <div class="hint">Send to Stockfish at ~2 Hz</div>
+        </div>
+      </label>
+
+      <label class="row">
+        <input type="checkbox" id="showEvalBadge" />
+        <div>
+          <div class="title">Eval badge</div>
+          <div class="hint">Show score pill on board</div>
+        </div>
+      </label>
+
+      <label class="row">
+        <input type="checkbox" id="showTopArrows" />
+        <div>
+          <div class="title">Top arrows</div>
+          <div class="hint">Draw multiple best lines</div>
+        </div>
+      </label>
+
+      <label class="row">
+        <input type="checkbox" id="showBlunderArrow" />
+        <div>
+          <div class="title">Blunder arrow</div>
+          <div class="hint">Show an intentionally bad move (red)</div>
+        </div>
+      </label>
+
+      <div class="row slider">
+        <div>
+          <div class="title">Top arrows count</div>
+          <div class="hint" id="topArrowsLabel"></div>
+        </div>
+        <input type="range" id="topArrows" min="1" max="5" step="1" />
+      </div>
+
+      <div class="row slider">
+        <div>
+          <div class="title">Depth</div>
+          <div class="hint" id="depthLabel"></div>
+        </div>
+        <input type="range" id="depth" min="8" max="18" step="1" />
+      </div>
+
+      <div class="row slider">
+        <div>
+          <div class="title">MultiPV</div>
+          <div class="hint" id="multipvLabel"></div>
+        </div>
+        <input type="range" id="multipv" min="1" max="5" step="1" />
+      </div>
+
+      <div class="row slider">
+        <div>
+          <div class="title">Skill / Accuracy</div>
+          <div class="hint" id="skillLabel"></div>
+        </div>
+        <input type="range" id="skillLevel" min="0" max="20" step="1" />
+      </div>
+
+      <button id="save">Save & Push</button>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

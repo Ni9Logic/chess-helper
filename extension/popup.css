@@ -1,0 +1,87 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.wrap {
+  width: 280px;
+  padding: 14px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.dot.green { background: #10b981; }
+.dot.red { background: #ef4444; }
+.dot.gray { background: #94a3b8; }
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 10px;
+  border-radius: 10px;
+}
+
+.row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
+.row.slider {
+  justify-content: space-between;
+}
+
+.title {
+  font-weight: 700;
+  font-size: 13px;
+}
+.hint {
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+input[type="range"] {
+  width: 120px;
+}
+
+#save {
+  margin-top: 4px;
+  padding: 10px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(120deg, #10b981, #059669);
+  color: #0f172a;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#save:hover {
+  filter: brightness(1.05);
+}
