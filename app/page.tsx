@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   formatMove,
@@ -13,10 +15,13 @@ import {
   toFen,
   type GameState,
   type Move,
+  type Piece,
   type PieceType,
   type Color,
   type ScoredMove,
 } from "@/lib/chessEngine";
+
+type SidebarTab = "guide" | "engine" | "history";
 
 const pieceName: Record<PieceType, string> = {
   p: "pawn",
@@ -26,6 +31,8 @@ const pieceName: Record<PieceType, string> = {
   q: "queen",
   k: "king",
 };
+
+const pieceTypes: PieceType[] = ["p", "n", "b", "r", "q", "k"];
 
 const PieceIcon = ({ color, type }: { color: Color; type: PieceType }) => {
   const colorName = color === "w" ? "white" : "black";
@@ -54,16 +61,20 @@ const Board = ({
   state,
   onMove,
   onFreeMove,
+  onPlacePiece,
   perspective,
   freeMode,
+  placementMode = false,
   arrows = [],
   lastMove,
 }: {
   state: GameState;
   onMove: (move: Move) => void;
   onFreeMove: (from: number, to: number) => void;
+  onPlacePiece?: (idx: number, piece?: Piece) => void;
   perspective: "w" | "b";
   freeMode: boolean;
+  placementMode?: boolean;
   arrows?: { from: number; to: number; color: Color; label: string }[];
   lastMove?: { from: number; to: number } | null;
 }) => {
@@ -85,6 +96,13 @@ const Board = ({
   }, [perspective]);
 
   const handleSquare = (idx: number) => {
+    if (freeMode && placementMode && onPlacePiece) {
+      onPlacePiece(idx);
+      setSelected(null);
+      setDragFrom(null);
+      return;
+    }
+
     const asDestination = movesFromActive.find((m) => m.to === idx);
     if (asDestination) {
       onMove(asDestination);
@@ -119,6 +137,20 @@ const Board = ({
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
+          if (freeMode && onPlacePiece) {
+            const pieceData = e.dataTransfer.getData("application/x-chess-piece");
+            if (pieceData) {
+              try {
+                const piece: Piece = JSON.parse(pieceData);
+                onPlacePiece(idx, piece);
+                setSelected(null);
+                setDragFrom(null);
+                return;
+              } catch {
+                // ignore malformed payloads
+              }
+            }
+          }
           const fromIdx = Number(e.dataTransfer.getData("text/plain"));
           if (Number.isNaN(fromIdx)) return;
           if (freeMode) {
@@ -259,8 +291,12 @@ export default function Home() {
   const state = states[cursor];
   const [playerColor, setPlayerColor] = useState<"w" | "b">("w");
   const [movePanel, setMovePanel] = useState<"best" | "blunder">("best");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("guide");
   const [history, setHistory] = useState<string[]>([]);
   const [freeMode, setFreeMode] = useState(false);
+  const [placementMode, setPlacementMode] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [selectedPiece, setSelectedPiece] = useState<Piece>({ color: "w", type: "p" });
   const [engineReady, setEngineReady] = useState(false);
   const [engineThinking, setEngineThinking] = useState(false);
   const [engineLine, setEngineLine] = useState<{
@@ -310,6 +346,8 @@ export default function Home() {
     if (scoredMoves.length <= 20) return [...scoredMoves].reverse();
     return scoredMoves.slice(-20).reverse();
   }, [scoredMoves]);
+  const bestMovesCompact = useMemo(() => bestMoves.slice(0, 10), [bestMoves]);
+  const blunderMovesCompact = useMemo(() => blunderMoves.slice(0, 10), [blunderMoves]);
   const status = useMemo(() => gameStatus(state), [state]);
 
   const canUndo = cursor > 0;
@@ -408,6 +446,7 @@ export default function Home() {
       worker.terminate();
       engineWorkerRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const uciToMove = useCallback(
@@ -487,7 +526,6 @@ export default function Home() {
     if (!autoAnalyze || !engineReady || engineThinking) return;
     const fen = toFen(state);
     if (fen === lastAnalyzedFen) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     askEngine(14, true);
   }, [autoAnalyze, engineReady, engineThinking, state, lastAnalyzedFen, askEngine]);
 
@@ -559,18 +597,40 @@ export default function Home() {
     ]);
   };
 
+  const placePiece = (idx: number, pieceOverride?: Piece) => {
+    const piece = pieceOverride ?? selectedPiece;
+    if (!piece) return;
+    const next = cloneBoard(state);
+    const replaced = next.board[idx];
+    next.board[idx] = { ...piece };
+    setStates((prev) => [...prev.slice(0, cursor + 1), next]);
+    setCursor((c) => c + 1);
+    setMoves((prev) => {
+      const trimmed = prev.slice(0, cursor);
+      const move = { from: idx, to: idx };
+      setLastMove(move);
+      return [...trimmed, move];
+    });
+    setHistory((h) => [
+      ...h.slice(0, cursor),
+      `${replaced ? "↻ Replaced" : "＋ Added"}: ${squareLabel(idx)} (${piece.color}${piece.type})`,
+    ]);
+  };
+
   const reset = () => {
     setStates([initialState()]);
     setCursor(0);
     setHistory([]);
     setMoves([]);
     setLastMove(null);
+    setPlacementMode(false);
+    setSelectedPiece({ color: "w", type: "p" });
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50 text-slate-900">
       <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-12 md:flex-row md:gap-12">
-        <div className="flex flex-1 flex-col gap-4">
+        <div className="flex flex-1 flex-col gap-4 md:sticky md:top-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center whitespace-nowrap gap-3">
               <div className="rounded-full border border-emerald-300 bg-white shadow-sm p-1">
@@ -594,7 +654,13 @@ export default function Home() {
                 </button>
               </div>
               <button
-                onClick={() => setFreeMode((v) => !v)}
+                onClick={() =>
+                  setFreeMode((v) => {
+                    const next = !v;
+                    if (!next) setPlacementMode(false);
+                    return next;
+                  })
+                }
                 className={`rounded-full px-3 py-2 text-xs font-semibold transition ${freeMode
                   ? "border border-amber-400 bg-amber-100 text-amber-900 shadow"
                   : "border border-slate-200 text-slate-800 hover:bg-slate-100"
@@ -638,296 +704,399 @@ export default function Home() {
               key={cursor}
               state={state}
               onMove={playMove}
-              onFreeMove={freeMode ? freeMove : () => { }}
+              onFreeMove={freeMode ? freeMove : () => {}}
+              onPlacePiece={freeMode ? placePiece : undefined}
               perspective={playerColor}
               freeMode={freeMode}
+              placementMode={placementMode}
               arrows={previewArrows}
               lastMove={lastMove}
             />
             {freeMode && (
-              <div
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const fromIdx = Number(e.dataTransfer.getData("text/plain"));
-                  if (!Number.isNaN(fromIdx)) removePiece(fromIdx);
-                }}
-                className="mt-3 flex items-center justify-center rounded-2xl border-2 border-dashed border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900"
-              >
-                Drag a piece here to remove it
+              <div className="mt-3 space-y-2 rounded-2xl border border-emerald-200 bg-white/80 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setPaletteOpen((v) => !v)}
+                    className="rounded-full border border-emerald-300 px-3 py-1 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50"
+                  >
+                    {paletteOpen ? "Hide palette" : "Show palette"}
+                  </button>
+                  <div className="flex overflow-hidden rounded-full border border-emerald-200 bg-white shadow-sm">
+                    <button
+                      onClick={() => setSelectedPiece((p) => ({ ...p, color: "w" }))}
+                      className={`px-3 py-1 text-xs font-semibold transition ${selectedPiece.color === "w"
+                        ? "bg-emerald-500 text-white"
+                        : "text-emerald-800 hover:bg-emerald-50"
+                        }`}
+                    >
+                      White
+                    </button>
+                    <button
+                      onClick={() => setSelectedPiece((p) => ({ ...p, color: "b" }))}
+                      className={`px-3 py-1 text-xs font-semibold transition ${selectedPiece.color === "b"
+                        ? "bg-emerald-500 text-white"
+                        : "text-emerald-800 hover:bg-emerald-50"
+                        }`}
+                    >
+                      Black
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setPlacementMode((v) => !v)}
+                    className={`rounded-full px-3 py-1 text-xs font-semibold transition ${placementMode
+                      ? "bg-emerald-600 text-white shadow"
+                      : "border border-emerald-200 text-emerald-800 hover:bg-emerald-100"
+                      }`}
+                  >
+                    {placementMode ? "Tap squares to place" : "Place mode off"}
+                  </button>
+                </div>
+
+                {paletteOpen && (
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {pieceTypes.map((t) => {
+                      const piece = { color: selectedPiece.color, type: t as PieceType };
+                      const selected = selectedPiece.type === t;
+                      return (
+                        <button
+                          key={`palette-${piece.color}-${t}`}
+                          onClick={() => setSelectedPiece(piece)}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("application/x-chess-piece", JSON.stringify(piece));
+                            e.dataTransfer.effectAllowed = "copy";
+                          }}
+                          className={`flex h-14 w-14 min-w-[56px] items-center justify-center rounded-xl border transition ${selected
+                            ? "border-emerald-500 bg-white shadow"
+                            : "border-emerald-100 bg-white hover:border-emerald-400"
+                            }`}
+                          title="Drag to board or tap a square in place mode"
+                        >
+                          <PieceIcon color={piece.color} type={piece.type} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const fromIdx = Number(e.dataTransfer.getData("text/plain"));
+                    if (!Number.isNaN(fromIdx)) removePiece(fromIdx);
+                  }}
+                  className="flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-900"
+                >
+                  Drop here to delete a piece
+                </div>
               </div>
             )}
             <p className="mt-3 text-xs text-emerald-900/70">
               Tip: drag or click a piece to see its legal moves. Promotions auto-queen for speed.
               {" "}
-              {freeMode && "Free edit lets you move any piece anywhere or drop it in the bin to remove."}
+              {freeMode &&
+                "Free edit lets you move any piece anywhere, drag new pieces from the palette, or drop any piece in the bin to remove."}
             </p>
           </div>
         </div>
 
         <aside className="w-full max-w-md space-y-4 rounded-3xl border border-emerald-200/60 bg-white/90 p-5 shadow-xl shadow-emerald-100">
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-800">
-            <div className="flex items-center justify-between">
-              <p className="font-semibold text-slate-900">Accuracy-friendly moves</p>
-              <span className="text-[11px] font-semibold text-emerald-700">Δcp ≤ ~{Math.max(10, (100 - accuracyTarget) * 5)} </span>
-            </div>
-            {accuracyFriendlyMoves.length === 0 ? (
-              <p className="mt-1 text-slate-700/70">No moves within your target. Consider relaxing accuracy.</p>
-            ) : (
-              <div className="mt-2 space-y-2">
-                {accuracyFriendlyMoves.map((item, i) => {
-                  const drop = (accuracyFriendlyMoves[0].score - item.score);
+          <div className="grid grid-cols-3 overflow-hidden rounded-full border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-900">
+            {([
+              ["guide", "Guide"],
+              ["engine", "Engine"],
+              ["history", "History"],
+            ] as [SidebarTab, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setSidebarTab(key as typeof sidebarTab)}
+                className={`px-3 py-2 transition ${sidebarTab === key
+                  ? "bg-emerald-500 text-white shadow"
+                  : "hover:bg-emerald-100"
+                  }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {sidebarTab === "guide" && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-800">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-slate-900">Accuracy-friendly</p>
+                  <span className="text-[11px] font-semibold text-emerald-700">
+                    Δcp ≤ ~{Math.max(10, (100 - accuracyTarget) * 5)}{" "}
+                  </span>
+                </div>
+                {accuracyFriendlyMoves.length === 0 ? (
+                  <p className="mt-1 text-slate-700/70">No moves within your target. Consider relaxing accuracy.</p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {accuracyFriendlyMoves.slice(0, 6).map((item, i) => {
+                      const drop = accuracyFriendlyMoves[0].score - item.score;
+                      return (
+                        <div
+                          key={`${moveKey(item.move)}-acc-${i}`}
+                          className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs"
+                        >
+                          <div>
+                            <p className="font-semibold text-emerald-900">
+                              {i + 1}. {formatMove(item.move)}
+                            </p>
+                            <p className="text-emerald-800/70">
+                              Eval: {(item.score / 100).toFixed(2)} · Drop {drop.toFixed(0)}cp
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => playMove(item.move)}
+                            className="rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white shadow hover:bg-emerald-400"
+                          >
+                            Play
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold text-emerald-900">Move explorer</h2>
+                <div className="grid grid-cols-2 overflow-hidden rounded-full border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-900">
+                  <button
+                    onClick={() => setMovePanel("best")}
+                    className={`px-3 py-1 transition ${movePanel === "best" ? "bg-emerald-500 text-white shadow" : "hover:bg-emerald-100"
+                      }`}
+                  >
+                    Best (10)
+                  </button>
+                  <button
+                    onClick={() => setMovePanel("blunder")}
+                    className={`px-3 py-1 transition ${movePanel === "blunder" ? "bg-rose-500 text-white shadow" : "hover:bg-rose-100"
+                      }`}
+                  >
+                    Blunders (10)
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={movePanel === "best" ? !bestMovesCompact.length : !blunderMovesCompact.length}
+                  onClick={() => {
+                    const list = movePanel === "best" ? bestMovesCompact : blunderMovesCompact;
+                    if (list[0]) playMove(list[0].move);
+                  }}
+                  className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${movePanel === "best"
+                    ? "border border-emerald-400 text-emerald-800 hover:bg-emerald-500 hover:text-white"
+                    : "border border-rose-300 text-rose-900 hover:bg-rose-500 hover:text-white"
+                    }`}
+                >
+                  {movePanel === "best" ? "Play top move" : "Play blunder"}
+                </button>
+                <button
+                  onClick={() => setMovePanel((p) => (p === "best" ? "blunder" : "best"))}
+                  className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                  Swap
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-[320px] overflow-auto pr-1">
+                {(movePanel === "best" ? bestMovesCompact : blunderMovesCompact).length === 0 && (
+                  <p className="text-sm text-emerald-800/80">No legal moves left.</p>
+                )}
+                {(movePanel === "best" ? bestMovesCompact : blunderMovesCompact).map((item, i) => {
+                  const isBest = movePanel === "best";
+                  const border = isBest
+                    ? "border-emerald-200/60 hover:border-emerald-400"
+                    : "border-rose-200/80 hover:border-rose-400";
+                  const bg = isBest ? "bg-white hover:bg-emerald-50" : "bg-rose-50 hover:bg-rose-100";
+                  const pillBg = isBest ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800";
+                  const text = isBest ? "text-emerald-900" : "text-rose-900";
+                  const subtext = isBest ? "text-emerald-800/70" : "text-rose-800/70";
                   return (
-                    <div
-                      key={`${moveKey(item.move)}-acc-${i}`}
-                      className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs"
+                    <button
+                      key={`${moveKey(item.move)}-${movePanel}-${i}`}
+                      onClick={() => playMove(item.move)}
+                      className={`flex w-full items-center justify-between rounded-2xl border ${border} ${bg} px-3 py-3 text-left transition`}
                     >
                       <div>
-                        <p className="font-semibold text-emerald-900">
-                          {i + 1}. {formatMove(item.move)}
+                        <p className={`text-sm font-semibold ${text}`}>
+                          #{i + 1} · {formatMove(item.move)}
                         </p>
-                        <p className="text-emerald-800/70">Eval: {(item.score / 100).toFixed(2)} · Drop {drop.toFixed(0)}cp</p>
+                        <p className={`text-xs ${subtext}`}>
+                          Eval (White perspective): {(item.score / 100).toFixed(2)}
+                        </p>
                       </div>
-                      <button
-                        onClick={() => playMove(item.move)}
-                        className="rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white shadow hover:bg-emerald-400"
-                      >
-                        Play
-                      </button>
-                    </div>
+                      <div className={`rounded-full px-3 py-1 text-xs font-semibold ${pillBg}`}>
+                        {(item.score / 100).toFixed(2)}
+                      </div>
+                    </button>
                   );
                 })}
               </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-emerald-200/60 bg-white p-3 text-sm text-emerald-900/80">
-            <div className="flex items-center justify-between gap-2">
-              <p className="font-semibold text-emerald-900">Stockfish Lite</p>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${engineReady ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"
-                  }`}
-              >
-                {engineReady ? "Ready" : "Warming up"}
-              </span>
             </div>
+          )}
 
-            <div className="mt-2 flex items-center justify-between gap-2 text-xs font-semibold text-emerald-800">
-              <span>Auto-analyze after each move</span>
-              <button
-                onClick={() => setAutoAnalyze((v) => !v)}
-                className={`rounded-full px-3 py-1 transition ${autoAnalyze
-                  ? "bg-emerald-500 text-white shadow"
-                  : "border border-emerald-200 text-emerald-800 hover:bg-emerald-50"
-                  }`}
-              >
-                {autoAnalyze ? "On" : "Off"}
-              </button>
-            </div>
+          {sidebarTab === "engine" && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-emerald-200/60 bg-white p-3 text-sm text-emerald-900/80">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold text-emerald-900">Stockfish Lite</p>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${engineReady ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"
+                      }`}
+                  >
+                    {engineReady ? "Ready" : "Warming up"}
+                  </span>
+                </div>
 
-            <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-              <div className="flex items-center justify-between font-semibold">
-                <span>Accuracy target</span>
-                <span>{accuracyTarget}%</span>
-              </div>
-              <input
-                type="range"
-                min={50}
-                max={100}
-                value={accuracyTarget}
-                onChange={(e) => setAccuracyTarget(Number(e.target.value))}
-                className="mt-2 h-2 w-full cursor-pointer accent-emerald-500"
-              />
-              <p className="mt-1 text-[11px] text-emerald-800/80">
-                Shows moves within a small eval drop of the best line so you can play to that level.
-              </p>
-            </div>
+                <div className="mt-2 flex items-center justify-between gap-2 text-xs font-semibold text-emerald-800">
+                  <span>Auto-analyze after each move</span>
+                  <button
+                    onClick={() => setAutoAnalyze((v) => !v)}
+                    className={`rounded-full px-3 py-1 transition ${autoAnalyze
+                      ? "bg-emerald-500 text-white shadow"
+                      : "border border-emerald-200 text-emerald-800 hover:bg-emerald-50"
+                      }`}
+                  >
+                    {autoAnalyze ? "On" : "Off"}
+                  </button>
+                </div>
 
-            <div className="mt-3 flex gap-2">
-              <button
-                onClick={() => askEngine(14, true)}
-                disabled={!engineReady || engineThinking}
-                className="flex-1 rounded-full border border-emerald-400 px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {engineThinking ? "Thinking..." : "Analyze depth 14"}
-              </button>
-              <button
-                onClick={() => {
-                  if (!engineLine?.bestmove) return;
-                  const move = uciToMove(engineLine.bestmove);
-                  if (move) playMove(move);
-                }}
-                disabled={!engineLine?.bestmove}
-                className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Play suggestion
-              </button>
-            </div>
-
-            <div className="mt-2 space-y-1 text-xs text-emerald-800/80">
-              {engineError && (
-                <p className="text-rose-700">
-                  Engine error: {engineError}. Reload after ensuring COOP/COEP headers.
-                </p>
-              )}
-              {!engineError && engineLine ? (
-                <>
-                  <p>
-                    Best move:{" "}
-                    <span className="font-semibold text-emerald-900">
-                      {engineLine.bestmove || "(pending)"}
-                    </span>{" "}
-                    · depth {engineLine.depth} · eval {engineLine.score}
+                <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                  <div className="flex items-center justify-between font-semibold">
+                    <span>Accuracy target</span>
+                    <span>{accuracyTarget}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={50}
+                    max={100}
+                    value={accuracyTarget}
+                    onChange={(e) => setAccuracyTarget(Number(e.target.value))}
+                    className="mt-2 h-2 w-full cursor-pointer accent-emerald-500"
+                  />
+                  <p className="mt-1 text-[11px] text-emerald-800/80">
+                    Shows moves within a small eval drop of the best line so you can play to that level.
                   </p>
-                  {engineLine.pv.length > 0 && (
-                    <p className="text-emerald-800/70">
-                      PV: {engineLine.pv.slice(0, 8).join(" ")}
-                      {engineLine.pv.length > 8 ? " …" : ""}
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => askEngine(14, true)}
+                    disabled={!engineReady || engineThinking}
+                    className="flex-1 rounded-full border border-emerald-400 px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {engineThinking ? "Thinking..." : "Analyze depth 14"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!engineLine?.bestmove) return;
+                      const move = uciToMove(engineLine.bestmove);
+                      if (move) playMove(move);
+                    }}
+                    disabled={!engineLine?.bestmove}
+                    className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Play suggestion
+                  </button>
+                </div>
+
+                <div className="mt-2 space-y-1 text-xs text-emerald-800/80">
+                  {engineError && (
+                    <p className="text-rose-700">
+                      Engine error: {engineError}. Reload after ensuring COOP/COEP headers.
                     </p>
                   )}
-                </>
-              ) : (
-                <p>No analysis yet. Hit “Analyze”.</p>
-              )}
-            </div>
-
-            {!engineError && enginePvList.length > 0 && (
-              <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">
-                  Top 20 lines
-                </p>
-                <div className="mt-2 space-y-1 max-h-64 overflow-auto pr-1">
-                  {enginePvList.map((pv) => (
-                    <button
-                      key={`pv-${pv.multipv}`}
-                      onClick={() => {
-                        const move = uciToMove(pv.move);
-                        if (move) playMove(move);
-                      }}
-                      className="flex w-full items-center justify-between rounded-xl border border-emerald-200 bg-white px-3 py-2 text-left text-xs font-medium text-emerald-900 transition hover:border-emerald-400 hover:bg-emerald-100"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-900">
-                          #{pv.multipv}
-                        </span>
-                        <span className="font-semibold">{pv.move || "(pending)"}</span>
-                        <span className="text-emerald-700">· depth {pv.depth}</span>
-                      </span>
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
-                        {pv.score}
-                      </span>
-                    </button>
-                  ))}
+                  {!engineError && engineLine ? (
+                    <>
+                      <p>
+                        Best move:{" "}
+                        <span className="font-semibold text-emerald-900">
+                          {engineLine.bestmove || "(pending)"}
+                        </span>{" "}
+                        · depth {engineLine.depth} · eval {engineLine.score}
+                      </p>
+                      {engineLine.pv.length > 0 && (
+                        <p className="text-emerald-800/70">
+                          PV: {engineLine.pv.slice(0, 8).join(" ")}
+                          {engineLine.pv.length > 8 ? " …" : ""}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p>No analysis yet. Hit “Analyze”.</p>
+                  )}
                 </div>
+
+                {!engineError && enginePvList.length > 0 && (
+                  <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">
+                      Top lines (10)
+                    </p>
+                    <div className="mt-2 space-y-1 max-h-64 overflow-auto pr-1">
+                      {enginePvList.slice(0, 10).map((pv) => (
+                        <button
+                          key={`pv-${pv.multipv}`}
+                          onClick={() => {
+                            const move = uciToMove(pv.move);
+                            if (move) playMove(move);
+                          }}
+                          className="flex w-full items-center justify-between rounded-xl border border-emerald-200 bg-white px-3 py-2 text-left text-xs font-medium text-emerald-900 transition hover:border-emerald-400 hover:bg-emerald-100"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-900">
+                              #{pv.multipv}
+                            </span>
+                            <span className="font-semibold">{pv.move || "(pending)"}</span>
+                            <span className="text-emerald-700">· depth {pv.depth}</span>
+                          </span>
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                            {pv.score}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xl font-semibold text-emerald-900">Move explorer</h2>
-            <div className="grid grid-cols-2 overflow-hidden rounded-full border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-900">
-              <button
-                onClick={() => setMovePanel("best")}
-                className={`px-3 py-1 transition ${movePanel === "best" ? "bg-emerald-500 text-white shadow" : "hover:bg-emerald-100"
-                  }`}
-              >
-                Best (20)
-              </button>
-              <button
-                onClick={() => setMovePanel("blunder")}
-                className={`px-3 py-1 transition ${movePanel === "blunder" ? "bg-rose-500 text-white shadow" : "hover:bg-rose-100"
-                  }`}
-              >
-                Blunders (20)
-              </button>
             </div>
-          </div>
+          )}
 
-          <div className="flex items-center gap-2">
-            <button
-              disabled={movePanel === "best" ? !bestMoves.length : !blunderMoves.length}
-              onClick={() => {
-                const list = movePanel === "best" ? bestMoves : blunderMoves;
-                if (list[0]) playMove(list[0].move);
-              }}
-              className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${movePanel === "best"
-                ? "border border-emerald-400 text-emerald-800 hover:bg-emerald-500 hover:text-white"
-                : "border border-rose-300 text-rose-900 hover:bg-rose-500 hover:text-white"
-                }`}
-            >
-              {movePanel === "best" ? "Play top move" : "Play blunder"}
-            </button>
-            <button
-              onClick={() => setMovePanel((p) => (p === "best" ? "blunder" : "best"))}
-              className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-            >
-              Swap
-            </button>
-          </div>
-
-          <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
-            {(movePanel === "best" ? bestMoves : blunderMoves).length === 0 && (
-              <p className="text-sm text-emerald-800/80">No legal moves left.</p>
-            )}
-            {(movePanel === "best" ? bestMoves : blunderMoves).map((item, i) => {
-              const isBest = movePanel === "best";
-              const border = isBest
-                ? "border-emerald-200/60 hover:border-emerald-400"
-                : "border-rose-200/80 hover:border-rose-400";
-              const bg = isBest ? "bg-white hover:bg-emerald-50" : "bg-rose-50 hover:bg-rose-100";
-              const pillBg = isBest ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800";
-              const text = isBest ? "text-emerald-900" : "text-rose-900";
-              const subtext = isBest ? "text-emerald-800/70" : "text-rose-800/70";
-              return (
-                <button
-                  key={`${moveKey(item.move)}-${movePanel}-${i}`}
-                  onClick={() => playMove(item.move)}
-                  className={`flex w-full items-center justify-between rounded-2xl border ${border} ${bg} px-3 py-3 text-left transition`}
-                >
-                  <div>
-                    <p className={`text-sm font-semibold ${text}`}>
-                      #{i + 1} · {formatMove(item.move)}
-                    </p>
-                    <p className={`text-xs ${subtext}`}>
-                      Eval (White perspective): {(item.score / 100).toFixed(2)}
-                    </p>
+          {sidebarTab === "history" && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-emerald-200/60 bg-white p-3 text-sm text-emerald-900/80">
+                <p className="font-semibold text-emerald-900">Move history</p>
+                {visibleHistory.length === 0 ? (
+                  <p className="mt-1 text-emerald-800/70">No moves yet.</p>
+                ) : (
+                  <div className="mt-2 grid grid-cols-1 gap-1 text-emerald-900">
+                    {visibleHistory.slice(-20).map((h, idx) => (
+                      <div
+                        key={`${h}-${idx}`}
+                        className="rounded-lg border border-emerald-200/60 bg-emerald-50 px-3 py-2 text-xs"
+                      >
+                        {h}
+                      </div>
+                    ))}
                   </div>
-                  <div className={`rounded-full px-3 py-1 text-xs font-semibold ${pillBg}`}>
-                    {(item.score / 100).toFixed(2)}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-
-
-
-          <div className="rounded-2xl border border-emerald-200/60 bg-white p-3 text-sm text-emerald-900/80">
-            <p className="font-semibold text-emerald-900">Move history</p>
-            {visibleHistory.length === 0 ? (
-              <p className="mt-1 text-emerald-800/70">No moves yet.</p>
-            ) : (
-              <div className="mt-2 grid grid-cols-1 gap-1 text-emerald-900">
-                {visibleHistory.slice(-16).map((h, idx) => (
-                  <div
-                    key={`${h}-${idx}`}
-                    className="rounded-lg border border-emerald-200/60 bg-emerald-50 px-3 py-2 text-xs"
-                  >
-                    {h}
-                  </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="rounded-2xl border border-emerald-200/60 bg-white p-3 text-sm text-emerald-900/80">
-            <p className="font-semibold text-emerald-900">How to use</p>
-            <ul className="mt-2 space-y-1 pl-4">
-              <li className="list-disc">Click a piece, then a highlighted square to move.</li>
-              <li className="list-disc">Use “Play top move” to let the helper execute its favorite line.</li>
-              <li className="list-disc">Want to switch sides? Just start moving the other color.</li>
-            </ul>
-          </div>
+              <div className="rounded-2xl border border-emerald-200/60 bg-white p-3 text-sm text-emerald-900/80">
+                <p className="font-semibold text-emerald-900">How to use</p>
+                <ul className="mt-2 space-y-1 pl-4">
+                  <li className="list-disc">Click a piece, then a highlighted square to move.</li>
+                  <li className="list-disc">Use “Play top move” to let the helper execute its favorite line.</li>
+                  <li className="list-disc">Want to switch sides? Just start moving the other color.</li>
+                </ul>
+              </div>
+            </div>
+          )}
         </aside>
       </div>
     </div>
