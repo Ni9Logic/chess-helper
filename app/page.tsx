@@ -43,10 +43,10 @@ const PieceIcon = ({ color, type }: { color: Color; type: PieceType }) => {
 };
 
 const squareColor = (row: number, col: number) =>
-  (row + col) % 2 === 0 ? "bg-white" : "bg-emerald-600";
+  (row + col) % 2 === 0 ? "bg-white" : "bg-[#B7C0D8]";
 
 const labelColor = (row: number, col: number) =>
-  (row + col) % 2 === 0 ? "text-emerald-700" : "text-emerald-50";
+  (row + col) % 2 === 0 ? "text-slate-700" : "text-slate-900";
 
 const pieceColor = (color: "w" | "b") => (color === "w" ? "text-slate-900" : "text-black");
 
@@ -57,6 +57,7 @@ const Board = ({
   perspective,
   freeMode,
   arrows = [],
+  lastMove,
 }: {
   state: GameState;
   onMove: (move: Move) => void;
@@ -64,6 +65,7 @@ const Board = ({
   perspective: "w" | "b";
   freeMode: boolean;
   arrows?: { from: number; to: number; color: Color; label: string }[];
+  lastMove?: { from: number; to: number } | null;
 }) => {
   const [selected, setSelected] = useState<number | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
@@ -104,9 +106,10 @@ const Board = ({
     const { row, col } = { row: Math.floor(idx / 8), col: idx % 8 };
     const isSelected = selected === idx;
     const isTarget = movesFromActive.some((m) => m.to === idx);
+    const isLastMove = lastMove ? lastMove.from === idx || lastMove.to === idx : false;
     const highlight =
       isSelected || isTarget
-        ? "ring-2 ring-amber-400 shadow-[0_0_0_3px] shadow-amber-200/40"
+        ? "ring-2 ring-purple-400 shadow-[0_0_0_3px] shadow-purple-200/40"
         : "";
 
     return (
@@ -133,6 +136,9 @@ const Board = ({
         }}
         className={`relative flex aspect-square w-full items-center justify-center text-3xl font-semibold transition duration-150 ${squareColor(row, col)} ${highlight}`}
       >
+        {isLastMove && (
+          <span className="pointer-events-none absolute inset-1 rounded-lg bg-purple-300/50 ring-2 ring-purple-500/80 mix-blend-multiply" />
+        )}
         {piece ? (
           <span
             draggable
@@ -153,7 +159,7 @@ const Board = ({
         ) : null}
         {isTarget && (
           <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="h-4 w-4 rounded-full bg-amber-300/80 shadow shadow-amber-500/40" />
+            <span className="h-4 w-4 rounded-full bg-purple-300/90 shadow shadow-purple-500/50" />
           </span>
         )}
         {col === 0 && (
@@ -272,6 +278,8 @@ export default function Home() {
   const [autoAnalyze, setAutoAnalyze] = useState(true);
   const [lastAnalyzedFen, setLastAnalyzedFen] = useState<string | null>(null);
   const [accuracyTarget, setAccuracyTarget] = useState(90); // 50-100 scale for user intent
+  const [moves, setMoves] = useState<Move[]>([]);
+  const [lastMove, setLastMove] = useState<{ from: number; to: number } | null>(null);
   const topWhiteMoves = useMemo<ScoredMove[]>(() => {
     const asWhite: GameState = { ...state, turn: "w" };
     return scoreMoves(asWhite, 3).slice(0, 3);
@@ -459,6 +467,12 @@ export default function Home() {
       return [...trimmed, next];
     });
     setCursor((c) => c + 1);
+    setMoves((prev) => {
+      const trimmed = prev.slice(0, cursor);
+      const next = [...trimmed, move];
+      setLastMove({ from: move.from, to: move.to });
+      return next;
+    });
     setHistory((h) => {
       const trimmed = h.slice(0, cursor);
       return [
@@ -479,12 +493,20 @@ export default function Home() {
 
   const undo = () => {
     if (!canUndo) return;
-    setCursor((c) => Math.max(0, c - 1));
+    setCursor((c) => {
+      const next = Math.max(0, c - 1);
+      setLastMove((moves[next - 1] ?? null) as { from: number; to: number } | null);
+      return next;
+    });
   };
 
   const redo = () => {
     if (!canRedo) return;
-    setCursor((c) => Math.min(states.length - 1, c + 1));
+    setCursor((c) => {
+      const next = Math.min(states.length - 1, c + 1);
+      setLastMove((moves[next - 1] ?? null) as { from: number; to: number } | null);
+      return next;
+    });
   };
 
   const cloneBoard = (s: GameState): GameState => ({
@@ -505,6 +527,12 @@ export default function Home() {
     next.board[to] = piece;
     setStates((prev) => [...prev.slice(0, cursor + 1), next]);
     setCursor((c) => c + 1);
+    setMoves((prev) => {
+      const trimmed = prev.slice(0, cursor);
+      const move = { from, to };
+      setLastMove(move);
+      return [...trimmed, move];
+    });
     setHistory((h) => [
       ...h.slice(0, cursor),
       `✦ Free move: ${squareLabel(from)} → ${squareLabel(to)} (${piece.color}${piece.type})`,
@@ -519,6 +547,12 @@ export default function Home() {
     next.board[idx] = null;
     setStates((prev) => [...prev.slice(0, cursor + 1), next]);
     setCursor((c) => c + 1);
+    setMoves((prev) => {
+      const trimmed = prev.slice(0, cursor);
+      const move = { from: idx, to: idx };
+      setLastMove(move);
+      return [...trimmed, move];
+    });
     setHistory((h) => [
       ...h.slice(0, cursor),
       `✖ Removed: ${squareLabel(idx)} (${piece.color}${piece.type})`,
@@ -529,6 +563,8 @@ export default function Home() {
     setStates([initialState()]);
     setCursor(0);
     setHistory([]);
+    setMoves([]);
+    setLastMove(null);
   };
 
   return (
@@ -541,8 +577,8 @@ export default function Home() {
                 <button
                   onClick={() => setPlayerColor("w")}
                   className={`rounded-full px-3 py-1 text-xs font-semibold transition ${playerColor === "w"
-                      ? "bg-emerald-500 text-white shadow"
-                      : "text-emerald-700 hover:text-emerald-900"
+                    ? "bg-emerald-500 text-white shadow"
+                    : "text-emerald-700 hover:text-emerald-900"
                     }`}
                 >
                   I am White
@@ -550,8 +586,8 @@ export default function Home() {
                 <button
                   onClick={() => setPlayerColor("b")}
                   className={`rounded-full px-3 py-1 text-xs font-semibold transition ${playerColor === "b"
-                      ? "bg-emerald-500 text-white shadow"
-                      : "text-emerald-700 hover:text-emerald-900"
+                    ? "bg-emerald-500 text-white shadow"
+                    : "text-emerald-700 hover:text-emerald-900"
                     }`}
                 >
                   I am Black
@@ -560,8 +596,8 @@ export default function Home() {
               <button
                 onClick={() => setFreeMode((v) => !v)}
                 className={`rounded-full px-3 py-2 text-xs font-semibold transition ${freeMode
-                    ? "border border-amber-400 bg-amber-100 text-amber-900 shadow"
-                    : "border border-slate-200 text-slate-800 hover:bg-slate-100"
+                  ? "border border-amber-400 bg-amber-100 text-amber-900 shadow"
+                  : "border border-slate-200 text-slate-800 hover:bg-slate-100"
                   }`}
               >
                 {freeMode ? "Free edit ON" : "Free edit OFF"}
@@ -606,6 +642,7 @@ export default function Home() {
               perspective={playerColor}
               freeMode={freeMode}
               arrows={previewArrows}
+              lastMove={lastMove}
             />
             {freeMode && (
               <div
@@ -629,6 +666,41 @@ export default function Home() {
         </div>
 
         <aside className="w-full max-w-md space-y-4 rounded-3xl border border-emerald-200/60 bg-white/90 p-5 shadow-xl shadow-emerald-100">
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-800">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold text-slate-900">Accuracy-friendly moves</p>
+              <span className="text-[11px] font-semibold text-emerald-700">Δcp ≤ ~{Math.max(10, (100 - accuracyTarget) * 5)} </span>
+            </div>
+            {accuracyFriendlyMoves.length === 0 ? (
+              <p className="mt-1 text-slate-700/70">No moves within your target. Consider relaxing accuracy.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {accuracyFriendlyMoves.map((item, i) => {
+                  const drop = (accuracyFriendlyMoves[0].score - item.score);
+                  return (
+                    <div
+                      key={`${moveKey(item.move)}-acc-${i}`}
+                      className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs"
+                    >
+                      <div>
+                        <p className="font-semibold text-emerald-900">
+                          {i + 1}. {formatMove(item.move)}
+                        </p>
+                        <p className="text-emerald-800/70">Eval: {(item.score / 100).toFixed(2)} · Drop {drop.toFixed(0)}cp</p>
+                      </div>
+                      <button
+                        onClick={() => playMove(item.move)}
+                        className="rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white shadow hover:bg-emerald-400"
+                      >
+                        Play
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="rounded-2xl border border-emerald-200/60 bg-white p-3 text-sm text-emerald-900/80">
             <div className="flex items-center justify-between gap-2">
               <p className="font-semibold text-emerald-900">Stockfish Lite</p>
@@ -645,8 +717,8 @@ export default function Home() {
               <button
                 onClick={() => setAutoAnalyze((v) => !v)}
                 className={`rounded-full px-3 py-1 transition ${autoAnalyze
-                    ? "bg-emerald-500 text-white shadow"
-                    : "border border-emerald-200 text-emerald-800 hover:bg-emerald-50"
+                  ? "bg-emerald-500 text-white shadow"
+                  : "border border-emerald-200 text-emerald-800 hover:bg-emerald-50"
                   }`}
               >
                 {autoAnalyze ? "On" : "Off"}
@@ -778,8 +850,8 @@ export default function Home() {
                 if (list[0]) playMove(list[0].move);
               }}
               className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${movePanel === "best"
-                  ? "border border-emerald-400 text-emerald-800 hover:bg-emerald-500 hover:text-white"
-                  : "border border-rose-300 text-rose-900 hover:bg-rose-500 hover:text-white"
+                ? "border border-emerald-400 text-emerald-800 hover:bg-emerald-500 hover:text-white"
+                : "border border-rose-300 text-rose-900 hover:bg-rose-500 hover:text-white"
                 }`}
             >
               {movePanel === "best" ? "Play top move" : "Play blunder"}
@@ -827,42 +899,8 @@ export default function Home() {
             })}
           </div>
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-800">
-            <div className="flex items-center justify-between">
-              <p className="font-semibold text-slate-900">Accuracy-friendly moves</p>
-              <span className="text-[11px] font-semibold text-emerald-700">Δcp ≤ ~{Math.max(10, (100 - accuracyTarget) * 5)} </span>
-            </div>
-            {accuracyFriendlyMoves.length === 0 ? (
-              <p className="mt-1 text-slate-700/70">No moves within your target. Consider relaxing accuracy.</p>
-            ) : (
-              <div className="mt-2 space-y-2">
-                {accuracyFriendlyMoves.map((item, i) => {
-                  const drop = (accuracyFriendlyMoves[0].score - item.score);
-                  return (
-                    <div
-                      key={`${moveKey(item.move)}-acc-${i}`}
-                      className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs"
-                    >
-                      <div>
-                        <p className="font-semibold text-emerald-900">
-                          {i + 1}. {formatMove(item.move)}
-                        </p>
-                        <p className="text-emerald-800/70">Eval: {(item.score / 100).toFixed(2)} · Drop {drop.toFixed(0)}cp</p>
-                      </div>
-                      <button
-                        onClick={() => playMove(item.move)}
-                        className="rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white shadow hover:bg-emerald-400"
-                      >
-                        Play
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
 
-          
+
 
           <div className="rounded-2xl border border-emerald-200/60 bg-white p-3 text-sm text-emerald-900/80">
             <p className="font-semibold text-emerald-900">Move history</p>
