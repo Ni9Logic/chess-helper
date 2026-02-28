@@ -1,4 +1,4 @@
-const API_URL = "https://chess-helper-phi.vercel.app/api/analyze";
+const API_URL = "http://localhost:3000/api/analyze";
 
 const defaultConfig = {
   enabled: true,
@@ -10,6 +10,8 @@ const defaultConfig = {
   multipv: 3,
   showBlunderArrow: false,
   skillLevel: 20,
+  orientation: "auto",
+  playerSide: "auto",
 };
 
 const loadConfig = async () => {

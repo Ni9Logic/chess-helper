@@ -29,6 +29,30 @@
       </label>
 
       <label class="row">
+        <div style="flex: 1;">
+          <div class="title">Board side</div>
+          <div class="hint">Force orientation when auto is wrong</div>
+        </div>
+        <select id="orientation">
+          <option value="auto">Auto detect</option>
+          <option value="white">I am White</option>
+          <option value="black">I am Black</option>
+        </select>
+      </label>
+
+      <label class="row">
+        <div style="flex: 1;">
+          <div class="title">Show moves for</div>
+          <div class="hint">Hide arrows when it's not my turn</div>
+        </div>
+        <select id="playerSide">
+          <option value="auto">Both sides</option>
+          <option value="white">Only White moves</option>
+          <option value="black">Only Black moves</option>
+        </select>
+      </label>
+
+      <label class="row">
         <input type="checkbox" id="showEvalBadge" />
         <div>
           <div class="title">Eval badge</div>

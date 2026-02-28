@@ -8,6 +8,8 @@ const fields = [
   "depth",
   "multipv",
   "skillLevel",
+  "orientation",
+  "playerSide",
 ];
 
 const setStatus = (state) => {
@@ -51,7 +53,9 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.forEach((f) => {
       const el = document.getElementById(f);
       if (!el) return;
-      cfg[f] = el.type === "checkbox" ? el.checked : Number(el.value);
+      if (el.type === "checkbox") cfg[f] = el.checked;
+      else if (el.tagName === "SELECT") cfg[f] = el.value;
+      else cfg[f] = Number(el.value);
     });
     chrome.runtime.sendMessage({ type: "saveConfig", config: cfg }, (resp) => {
       if (resp?.ok) setStatus(cfg.enabled ? "ok" : "gray");
