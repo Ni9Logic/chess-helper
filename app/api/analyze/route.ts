@@ -15,7 +15,6 @@ const allowCors = {
 type AnalysisPayload = {
   type: "analysis";
   source: string;
-  tabId: number | null;
   fen: string;
   generatedAt: number;
   id: string;
@@ -35,7 +34,7 @@ export async function OPTIONS() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { fen, depth = 12, multipv = 3, skillLevel = 20, tabId = null, source = "extension" } = body ?? {};
+    const { fen, depth = 12, multipv = 3, skillLevel = 20, source = "extension" } = body ?? {};
     if (!fen || typeof fen !== "string") {
       return NextResponse.json({ error: "fen required" }, { status: 400, headers: allowCors });
     }
@@ -65,7 +64,6 @@ export async function POST(req: NextRequest) {
     const payload: AnalysisPayload = {
       type: "analysis",
       source,
-      tabId,
       fen,
       generatedAt: Date.now(),
       blunderMove,

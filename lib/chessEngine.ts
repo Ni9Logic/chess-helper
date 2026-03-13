@@ -290,6 +290,8 @@ export const inCheck = (state: GameState, color: Color) => {
 
 const addMove = (moves: Move[], move: Move) => moves.push(move);
 
+const promotionTypes: PieceType[] = ["q", "r", "b", "n"];
+
 const pawnMoves = (state: GameState, idx: number, moves: Move[]) => {
   const piece = state.board[idx];
   if (!piece) return;
@@ -302,11 +304,14 @@ const pawnMoves = (state: GameState, idx: number, moves: Move[]) => {
   const oneRow = row + dir;
   if (isInside(oneRow, col) && state.board[coordToIdx(oneRow, col)] === null) {
     const toIdx = coordToIdx(oneRow, col);
-    addMove(moves, {
-      from: idx,
-      to: toIdx,
-      promotion: oneRow === 0 || oneRow === 7 ? "q" : undefined,
-    });
+    if (oneRow === 0 || oneRow === 7) {
+      // Generate all four promotion types
+      for (const promo of promotionTypes) {
+        addMove(moves, { from: idx, to: toIdx, promotion: promo });
+      }
+    } else {
+      addMove(moves, { from: idx, to: toIdx });
+    }
 
     // Two steps
     if (row === startRow) {
@@ -325,12 +330,13 @@ const pawnMoves = (state: GameState, idx: number, moves: Move[]) => {
     const targetIdx = coordToIdx(r, c);
     const target = state.board[targetIdx];
     if (target && target.color !== color) {
-      addMove(moves, {
-        from: idx,
-        to: targetIdx,
-        capture: target,
-        promotion: r === 0 || r === 7 ? "q" : undefined,
-      });
+      if (r === 0 || r === 7) {
+        for (const promo of promotionTypes) {
+          addMove(moves, { from: idx, to: targetIdx, capture: target, promotion: promo });
+        }
+      } else {
+        addMove(moves, { from: idx, to: targetIdx, capture: target });
+      }
     }
     if (state.enPassant === targetIdx && !target) {
       addMove(moves, { from: idx, to: targetIdx, enPassant: true, capture: { color: opposite(color), type: "p" } });

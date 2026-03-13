@@ -1,115 +1,178 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="UTF-8" />
-    <title>Chess Trainer</title>
-    <link rel="stylesheet" href="popup.css" />
-  </head>
-  <body>
-    <div class="wrap">
-      <header>
-        <h1>Trainer</h1>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Chess Trainer</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <h1>♞ Trainer</h1>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span id="status-msg" style="font-size:10px;color:#94a3b8"></span>
         <span id="status-dot" class="dot gray"></span>
-      </header>
-
-      <label class="row">
-        <input type="checkbox" id="enabled" />
-        <div>
-          <div class="title">Enabled</div>
-          <div class="hint">Send FEN and draw overlay</div>
-        </div>
-      </label>
-
-      <label class="row">
-        <input type="checkbox" id="autoAnalyze" />
-        <div>
-          <div class="title">Auto analyze</div>
-          <div class="hint">Send to Stockfish at ~2 Hz</div>
-        </div>
-      </label>
-
-      <label class="row">
-        <div style="flex: 1;">
-          <div class="title">Board side</div>
-          <div class="hint">Force orientation when auto is wrong</div>
-        </div>
-        <select id="orientation">
-          <option value="auto">Auto detect</option>
-          <option value="white">I am White</option>
-          <option value="black">I am Black</option>
-        </select>
-      </label>
-
-      <label class="row">
-        <div style="flex: 1;">
-          <div class="title">Show moves for</div>
-          <div class="hint">Hide arrows when it's not my turn</div>
-        </div>
-        <select id="playerSide">
-          <option value="auto">Both sides</option>
-          <option value="white">Only White moves</option>
-          <option value="black">Only Black moves</option>
-        </select>
-      </label>
-
-      <label class="row">
-        <input type="checkbox" id="showEvalBadge" />
-        <div>
-          <div class="title">Eval badge</div>
-          <div class="hint">Show score pill on board</div>
-        </div>
-      </label>
-
-      <label class="row">
-        <input type="checkbox" id="showTopArrows" />
-        <div>
-          <div class="title">Top arrows</div>
-          <div class="hint">Draw multiple best lines</div>
-        </div>
-      </label>
-
-      <label class="row">
-        <input type="checkbox" id="showBlunderArrow" />
-        <div>
-          <div class="title">Blunder arrow</div>
-          <div class="hint">Show an intentionally bad move (red)</div>
-        </div>
-      </label>
-
-      <div class="row slider">
-        <div>
-          <div class="title">Top arrows count</div>
-          <div class="hint" id="topArrowsLabel"></div>
-        </div>
-        <input type="range" id="topArrows" min="1" max="5" step="1" />
       </div>
+    </header>
 
-      <div class="row slider">
-        <div>
-          <div class="title">Depth</div>
-          <div class="hint" id="depthLabel"></div>
-        </div>
-        <input type="range" id="depth" min="8" max="18" step="1" />
+    <!-- Core toggles -->
+    <label class="row">
+      <input type="checkbox" id="enabled" />
+      <div>
+        <div class="title">Enabled</div>
+        <div class="hint">Send FEN and draw overlay</div>
       </div>
+    </label>
 
-      <div class="row slider">
-        <div>
-          <div class="title">MultiPV</div>
-          <div class="hint" id="multipvLabel"></div>
-        </div>
-        <input type="range" id="multipv" min="1" max="5" step="1" />
+    <label class="row">
+      <input type="checkbox" id="autoAnalyze" />
+      <div>
+        <div class="title">Auto analyze</div>
+        <div class="hint">Send to Stockfish at ~2 Hz</div>
       </div>
+    </label>
 
-      <div class="row slider">
-        <div>
-          <div class="title">Skill / Accuracy</div>
-          <div class="hint" id="skillLabel"></div>
-        </div>
-        <input type="range" id="skillLevel" min="0" max="20" step="1" />
+    <!-- Selects -->
+    <label class="row">
+      <div style="flex:1">
+        <div class="title">Board side</div>
+        <div class="hint">Force orientation when auto is wrong</div>
       </div>
+      <select id="orientation">
+        <option value="auto">Auto detect</option>
+        <option value="white">I am White</option>
+        <option value="black">I am Black</option>
+      </select>
+    </label>
 
-      <button id="save">Save & Push</button>
+    <label class="row">
+      <div style="flex:1">
+        <div class="title">Show moves for</div>
+        <div class="hint">Hide arrows when it's not my turn</div>
+      </div>
+      <select id="playerSide">
+        <option value="auto">Both sides</option>
+        <option value="white">Only White moves</option>
+        <option value="black">Only Black moves</option>
+      </select>
+    </label>
+
+    <!-- Overlay checkboxes -->
+    <div class="section-label">Overlays</div>
+
+    <label class="row compact">
+      <input type="checkbox" id="showEvalBadge" />
+      <div class="title">Eval badge</div>
+    </label>
+
+    <label class="row compact">
+      <input type="checkbox" id="showTopArrows" />
+      <div class="title">Top arrows</div>
+    </label>
+
+    <label class="row compact">
+      <input type="checkbox" id="showBlunderArrow" />
+      <div class="title">Blunder arrow</div>
+    </label>
+
+    <label class="row compact">
+      <input type="checkbox" id="showThreatArrow" />
+      <div class="title">Threat arrow</div>
+    </label>
+
+    <label class="row compact">
+      <input type="checkbox" id="showWdlBar" />
+      <div class="title">W/D/L bar</div>
+    </label>
+
+    <label class="row compact">
+      <input type="checkbox" id="showOpeningName" />
+      <div class="title">Opening name</div>
+    </label>
+
+    <label class="row compact">
+      <input type="checkbox" id="showMoveClassification" />
+      <div class="title">Move classification</div>
+    </label>
+
+    <!-- Behaviour checkboxes -->
+    <div class="section-label">Behaviour</div>
+
+    <label class="row compact">
+      <input type="checkbox" id="blunderSound" />
+      <div class="title">Blunder sound</div>
+    </label>
+
+    <label class="row compact">
+      <input type="checkbox" id="keyboardShortcuts" />
+      <div class="title">Keyboard shortcuts</div>
+    </label>
+
+    <label class="row compact">
+      <input type="checkbox" id="pauseOnPremove" />
+      <div class="title">Pause on premove</div>
+    </label>
+
+    <label class="row compact">
+      <input type="checkbox" id="enableLichess" />
+      <div class="title">Lichess support</div>
+    </label>
+
+    <!-- Sliders -->
+    <div class="section-label">Engine</div>
+
+    <div class="row slider">
+      <div>
+        <div class="title">Top arrows count</div>
+        <div class="hint" id="topArrowsLabel"></div>
+      </div>
+      <input type="range" id="topArrows" min="1" max="5" step="1" value="3" />
     </div>
-    <script src="popup.js"></script>
-  </body>
+
+    <div class="row slider">
+      <div>
+        <div class="title">Depth</div>
+        <div class="hint" id="depthLabel"></div>
+      </div>
+      <input type="range" id="depth" min="8" max="18" step="1" />
+    </div>
+
+    <div class="row slider">
+      <div>
+        <div class="title">MultiPV</div>
+        <div class="hint" id="multipvLabel"></div>
+      </div>
+      <input type="range" id="multipv" min="1" max="5" step="1" />
+    </div>
+
+    <div class="row slider">
+      <div>
+        <div class="title">Skill / Accuracy</div>
+        <div class="hint" id="skillLabel"></div>
+      </div>
+      <input type="range" id="skillLevel" min="0" max="20" step="1" />
+    </div>
+
+    <!-- Theme -->
+    <div class="section-label">Appearance</div>
+
+    <label class="row compact">
+      <input type="checkbox" id="darkTheme" />
+      <div class="title">Dark theme</div>
+    </label>
+
+    <!-- Actions -->
+    <div class="actions">
+      <button id="save">Save & Push ↗</button>
+      <button id="exportPgn" class="secondary">Export PGN</button>
+    </div>
+
+    <div class="shortcut-hint">Alt+T toggle · Alt+E eval · Alt+A arrows</div>
+  </div>
+  <script src="config.js"></script>
+  <script src="popup.js"></script>
+</body>
+
 </html>
