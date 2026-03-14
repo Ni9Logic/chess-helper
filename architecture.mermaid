@@ -1,0 +1,50 @@
+flowchart TB
+    subgraph Sites["🌐 Chess Sites"]
+        CC["chess.com"]
+        LC["lichess.org"]
+    end
+
+    subgraph Content["📄 Content Scripts"]
+        CFG["config.js"]
+        MH["moveHistory.js"]
+        TAC["tactics.js"]
+        ANA["analytics.js"]
+        LI["lichess.js"]
+        CS["content.js"]
+    end
+
+    subgraph BG["⚙️ background.js"]
+        ROUTER["Message Router"]
+        CONFIG["Config Manager"]
+        CTX["Context Menus"]
+    end
+
+    subgraph OFF["🔒 Offscreen Document"]
+        OFFJS["offscreen.js"]
+        SF["Stockfish WASM Worker"]
+    end
+
+    subgraph UI["🪟 Popup"]
+        SETTINGS["Settings Tab"]
+        DASH["Dashboard Tab"]
+        KEYS["Shortcuts Tab"]
+    end
+
+    STORE[("💾 chrome.storage")]
+    SYZYGY["🌍 tablebase.lichess.ovh"]
+
+    CC & LC -->|"DOM read"| CS
+    LC -->|"cg-board"| LI --> CS
+    CS -->|"FEN"| ROUTER
+    ROUTER --> OFFJS -->|"UCI"| SF
+    SF -->|"bestmove + WDL"| OFFJS --> ROUTER
+    ROUTER -->|"analysis"| CS
+
+    CS --> TAC
+    CS --> MH --> ANA --> STORE
+    CS -->|"≤7 pieces"| SYZYGY
+
+    CONFIG <--> STORE
+    UI <-->|"get/save config"| CONFIG
+    CONFIG -->|"push"| CS
+    CTX -->|"actions"| CS

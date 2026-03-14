@@ -302,11 +302,14 @@ const clearArrows = () => {
   if (svg) svg.innerHTML = "";
 };
 
-// ── Arrow drawing ─────────────────────────────────────────────────────────
+// ── Arrow drawing (curved bezier) ─────────────────────────────────────────
 
+const ARROW_COLORS = ["#10b981", "#14b8a6", "#38bdf8", "#818cf8", "#a78bfa"];
 const markerIdForColor = (color) => `arrowhead-${color.replace("#", "")}`;
 
-const drawArrow = (fromSq, toSq, label = "", color = "#10b981", labelOffset = 0, opacity = 0.74) => {
+// curvature: 0 = straight, positive = curve left, negative = curve right
+// strokeWidth: thicker = more important
+const drawArrow = (fromSq, toSq, label = "", color = "#10b981", curvature = 0, opacity = 0.74, strokeWidth = 0.9) => {
   const svg = document.getElementById("chess-trainer-svg");
   if (!svg) return;
   const squareOk = (sq) => typeof sq === "string" && /^[a-h][1-8]$/i.test(sq);
@@ -328,15 +331,17 @@ const drawArrow = (fromSq, toSq, label = "", color = "#10b981", labelOffset = 0,
   const x2 = (dispFile(toFile) + 0.5) * (100 / 8);
   const y2 = (dispRank(toRank) + 0.5) * (100 / 8);
 
-  const markerId = markerIdForColor(color);
-  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  line.setAttribute("x1", x1); line.setAttribute("y1", y1);
-  line.setAttribute("x2", x2); line.setAttribute("y2", y2);
-  line.setAttribute("stroke", color);
-  line.setAttribute("stroke-width", "0.9");
-  line.setAttribute("stroke-opacity", String(opacity));
-  line.setAttribute("marker-end", `url(#${markerId})`);
+  // Compute control point for quadratic bezier curve
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  // Perpendicular offset for the control point
+  const cx = mx + (-dy / len) * curvature;
+  const cy = my + (dx / len) * curvature;
 
+  const markerId = markerIdForColor(color);
+
+  // Ensure defs + marker
   const defs = svg.querySelector("defs") || (() => {
     const d = document.createElementNS("http://www.w3.org/2000/svg", "defs");
     svg.appendChild(d); return d;
@@ -352,16 +357,34 @@ const drawArrow = (fromSq, toSq, label = "", color = "#10b981", labelOffset = 0,
     poly.setAttribute("fill", color);
     marker.appendChild(poly); defs.appendChild(marker);
   }
-  svg.appendChild(line);
 
+  // Draw curved path instead of straight line
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  if (Math.abs(curvature) < 0.5) {
+    // Straight line for zero curvature
+    path.setAttribute("d", `M${x1},${y1} L${x2},${y2}`);
+  } else {
+    // Quadratic bezier curve
+    path.setAttribute("d", `M${x1},${y1} Q${cx},${cy} ${x2},${y2}`);
+  }
+  path.setAttribute("stroke", color);
+  path.setAttribute("stroke-width", String(strokeWidth));
+  path.setAttribute("stroke-opacity", String(opacity));
+  path.setAttribute("fill", "none");
+  path.setAttribute("marker-end", `url(#${markerId})`);
+  svg.appendChild(path);
+
+  // Label at the curve midpoint
   if (label) {
-    const dx = x2 - x1, dy = y2 - y1;
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-    const px = (-dy / len) * labelOffset, py = (dx / len) * labelOffset;
+    // For quadratic bezier, midpoint at t=0.5: P = (1-t)²P0 + 2(1-t)tP1 + t²P2
+    const lx = 0.25 * x1 + 0.5 * cx + 0.25 * x2;
+    const ly = 0.25 * y1 + 0.5 * cy + 0.25 * y2;
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", ((x1 + x2) / 2 + px)); text.setAttribute("y", ((y1 + y2) / 2 - 2 + py));
-    text.setAttribute("fill", "#0f172a"); text.setAttribute("font-size", "6");
-    text.setAttribute("font-weight", "600"); text.setAttribute("text-anchor", "middle");
+    text.setAttribute("x", lx); text.setAttribute("y", ly - 1.5);
+    text.setAttribute("fill", "#fff"); text.setAttribute("font-size", "4.5");
+    text.setAttribute("font-weight", "700"); text.setAttribute("text-anchor", "middle");
+    text.setAttribute("paint-order", "stroke"); text.setAttribute("stroke", "#0f172a");
+    text.setAttribute("stroke-width", "1.5");
     text.textContent = label;
     svg.appendChild(text);
   }
@@ -717,14 +740,19 @@ const handleAnalysis = (payload) => {
     renderWdlBar(null); return;
   }
 
-  // Best-move arrows
+  // Best-move arrows — distinct colors + curves so they don't overlap
   const maxArrows = currentConfig.showTopArrows ? Math.min(currentConfig.topArrows || 1, moves.length) : 1;
   for (let i = 0; i < maxArrows; i++) {
     const mv = moves[i];
     if (!mv?.uci || mv.uci.length < 4) continue;
     const from = mv.uci.slice(0, 2), to = mv.uci.slice(2, 4);
     const label = i === 0 ? mv.score || "" : `#${i + 1}`;
-    drawArrow(from, to, label, "#10b981", (i - (maxArrows - 1) / 2) * 2.2);
+    const arrowColor = ARROW_COLORS[i] || ARROW_COLORS[ARROW_COLORS.length - 1];
+    // Alternate curvature direction: 0, +4, -4, +7, -7...
+    const curve = i === 0 ? 0 : (i % 2 === 1 ? 1 : -1) * (3 + Math.floor(i / 2) * 2);
+    const width = Math.max(0.5, 1.2 - i * 0.15);
+    const alpha = Math.max(0.45, 0.85 - i * 0.1);
+    drawArrow(from, to, label, arrowColor, curve, alpha, width);
     if (i === 0 && evalBadge && currentConfig.showEvalBadge) evalBadge.textContent = mv.score || "0.0";
   }
 
