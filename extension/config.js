@@ -20,6 +20,24 @@ const defaultConfig = {
     showWdlBar: false,
     showOpeningName: true,
     showMoveClassification: true,
+    showPvLine: true,
+    arrowAnimation: true,
+
+    // Game Intelligence
+    timeTroubleAlert: true,
+    timeTroubleThreshold: 30,  // seconds
+    endgameTablebase: true,
+    opponentProfiler: false,
+
+    // Training
+    moveExplanations: false,
+    puzzleMode: true,
+    patternRecognition: true,
+    postGameSummary: true,
+
+    // UX
+    streamerMode: false,
+    positionBookmarks: true,
 
     // Alerts
     blunderSound: true,

@@ -60,6 +60,20 @@ chrome.storage.onChanged.addListener((changes) => {
 chrome.runtime.onInstalled.addListener(async () => {
   await saveConfig(globalThis.defaultConfig);
   await ensureOffscreen();
+
+  // Context menus
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: "ct-copy-fen", title: "Copy FEN", contexts: ["page"], documentUrlPatterns: ["https://www.chess.com/*", "https://lichess.org/*"] });
+    chrome.contextMenus.create({ id: "ct-bookmark", title: "📌 Bookmark Position", contexts: ["page"], documentUrlPatterns: ["https://www.chess.com/*", "https://lichess.org/*"] });
+    chrome.contextMenus.create({ id: "ct-screenshot", title: "📸 Screenshot Arrows", contexts: ["page"], documentUrlPatterns: ["https://www.chess.com/*", "https://lichess.org/*"] });
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (!tab?.id) return;
+  const actionMap = { "ct-copy-fen": "copyFen", "ct-bookmark": "bookmark", "ct-screenshot": "screenshot" };
+  const action = actionMap[info.menuItemId];
+  if (action) chrome.tabs.sendMessage(tab.id, { type: "contextAction", action });
 });
 
 // Handle messages from content scripts and offscreen document

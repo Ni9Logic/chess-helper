@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Chess Trainer Overlay",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Reads chess.com & lichess.org board, runs Stockfish locally via WASM, overlays best move arrows, opening names, WDL bar, and move classifications.",
   "permissions": [
     "scripting",
     "tabs",
     "storage",
     "alarms",
-    "offscreen"
+    "offscreen",
+    "contextMenus"
   ],
   "host_permissions": [
     "https://www.chess.com/*",
@@ -34,6 +35,8 @@
       "js": [
         "config.js",
         "moveHistory.js",
+        "tactics.js",
+        "analytics.js",
         "lichess.js",
         "content.js"
       ],

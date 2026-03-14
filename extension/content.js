@@ -446,104 +446,323 @@ const playBlunderSound = (classification) => {
 
 // ── Analysis handler ──────────────────────────────────────────────────────
 
+// PV line visualization
+const drawPvLine = (pv) => {
+  if (!currentConfig.showPvLine || !pv || pv.length < 2) return;
+  const colors = ["#10b981", "#34d399", "#6ee7b7", "#a7f3d0"];
+  for (let i = 1; i < Math.min(pv.length, 5); i++) {
+    const move = pv[i];
+    if (!move || move.length < 4) continue;
+    drawArrow(move.slice(0, 2), move.slice(2, 4), "", colors[i] || "#d1fae5", 0, 0.5 - i * 0.08);
+  }
+};
+
+// Arrow fade-in animation
+const animateOverlay = () => {
+  if (!currentConfig.arrowAnimation || !boardOverlay) return;
+  boardOverlay.classList.remove("ct-fade-in");
+  void boardOverlay.offsetWidth;
+  boardOverlay.classList.add("ct-fade-in");
+};
+
+// Time trouble
+let timeTroubleActive = false;
+let timeTroubleInterval = null;
+
+const parseClockText = (text) => {
+  if (!text) return null;
+  const parts = text.split(":");
+  if (parts.length === 2) return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+  const s = parseFloat(text);
+  return isNaN(s) ? null : s;
+};
+
+const checkTimeTrouble = () => {
+  if (!currentConfig.timeTroubleAlert) return;
+  const boardEl = findBoard();
+  if (!boardEl) return;
+  const clockEl = document.querySelector(
+    ".clock-player-bottom .clock-time, [data-cy='clock-player-bottom'] .clock-time-monospace, .rclock-bottom .time"
+  );
+  if (!clockEl) return;
+  const seconds = parseClockText(clockEl.textContent?.trim());
+  if (seconds !== null && seconds <= (currentConfig.timeTroubleThreshold || 30) && seconds > 0) {
+    if (!timeTroubleActive) { timeTroubleActive = true; boardEl.classList.add("ct-time-trouble"); }
+  } else if (timeTroubleActive) {
+    timeTroubleActive = false; boardEl.classList.remove("ct-time-trouble");
+  }
+};
+
+// Endgame tablebase
+let lastTablebaseFen = null;
+let tablebasePill = null;
+
+const checkTablebase = async (fen) => {
+  if (!currentConfig.endgameTablebase || !fen) return;
+  const pieceCount = fen.split(" ")[0].replace(/[^a-zA-Z]/g, "").length;
+  if (pieceCount > 7) return;
+  if (fen === lastTablebaseFen) return;
+  lastTablebaseFen = fen;
+  try {
+    const resp = await fetch(`https://tablebase.lichess.ovh/standard?fen=${encodeURIComponent(fen)}`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!tablebasePill || !tablebasePill.isConnected) {
+      const boardEl = findBoard();
+      if (!boardEl) return;
+      tablebasePill = document.createElement("div");
+      tablebasePill.id = "chess-trainer-tablebase";
+      boardEl.appendChild(tablebasePill);
+    }
+    if (data.category?.includes("win")) {
+      tablebasePill.textContent = `TB: Win in ${Math.abs(data.dtm || data.dtz || "?")}`;
+      tablebasePill.style.background = "rgba(16,185,129,0.85)";
+    } else if (data.category?.includes("loss")) {
+      tablebasePill.textContent = `TB: Loss in ${Math.abs(data.dtm || data.dtz || "?")}`;
+      tablebasePill.style.background = "rgba(239,68,68,0.85)";
+    } else {
+      tablebasePill.textContent = "TB: Draw";
+      tablebasePill.style.background = "rgba(100,116,139,0.85)";
+    }
+    tablebasePill.style.display = "block";
+    if (data.moves?.[0]?.uci) {
+      const m = data.moves[0].uci;
+      drawArrow(m.slice(0, 2), m.slice(2, 4), "TB", "#8b5cf6", 0, 0.8);
+    }
+  } catch { }
+};
+
+// Puzzle detection
+let lastPuzzleShown = 0;
+let puzzleBadge = null;
+
+const parseEvalNum = (s) => {
+  if (typeof s === "number") return s;
+  if (typeof s !== "string") return null;
+  if (s.startsWith("Mate")) return s.includes("-") ? -100 : 100;
+  return parseFloat(s) || null;
+};
+
+const checkPuzzle = (prevScore, bestScore) => {
+  if (!currentConfig.puzzleMode) return;
+  const p = parseEvalNum(prevScore), b = parseEvalNum(bestScore);
+  if (p === null || b === null) return;
+  if (Math.abs(b - p) > 2 && Date.now() - lastPuzzleShown > 5000) {
+    lastPuzzleShown = Date.now();
+    if (!puzzleBadge || !puzzleBadge.isConnected) {
+      const boardEl = findBoard(); if (!boardEl) return;
+      puzzleBadge = document.createElement("div");
+      puzzleBadge.id = "chess-trainer-puzzle";
+      puzzleBadge.textContent = "⚡ Tactic!";
+      boardEl.appendChild(puzzleBadge);
+    }
+    puzzleBadge.style.display = "flex";
+    puzzleBadge.style.opacity = "1";
+    setTimeout(() => { puzzleBadge.style.opacity = "0"; setTimeout(() => { puzzleBadge.style.display = "none"; }, 500); }, 3000);
+  }
+};
+
+// Pattern recognition
+const showPatterns = (fen, moveUci) => {
+  if (!currentConfig.patternRecognition || !globalThis.tacticsEngine) return;
+  const patterns = globalThis.tacticsEngine.detectPatterns(fen, moveUci);
+  for (const p of patterns) {
+    if (p.type === "fork" && p.targets) {
+      for (const target of p.targets) drawArrow(p.square, target, "⚔", "#f59e0b", 0, 0.6);
+    }
+    if (p.type === "back_rank_weakness") showTempBadge(p.label, "chess-trainer-pattern");
+  }
+};
+
+// Move explanation
+const showExplanation = (fen, moveUci) => {
+  if (!currentConfig.moveExplanations || !globalThis.tacticsEngine) return;
+  const text = globalThis.tacticsEngine.explainMove(fen, moveUci);
+  if (text) showTempBadge(text, "chess-trainer-explanation");
+};
+
+// Reusable temp badge helper
+const showTempBadge = (text, id, duration = 3000) => {
+  let el = document.getElementById(id);
+  if (!el) {
+    const boardEl = findBoard(); if (!boardEl) return;
+    el = document.createElement("div");
+    el.id = id;
+    el.className = `ct-temp-badge ${id}`;
+    boardEl.appendChild(el);
+  }
+  el.textContent = text;
+  el.style.display = "block";
+  el.style.opacity = "1";
+  setTimeout(() => { el.style.opacity = "0"; setTimeout(() => { el.style.display = "none"; }, 400); }, duration);
+};
+
+// Opponent profile
+const updateOpponentProfile = () => {
+  if (!currentConfig.opponentProfiler || !globalThis.analytics) return;
+  const mh = globalThis.moveHistory?.exportData();
+  if (!mh) return;
+  const profile = globalThis.analytics.profileOpponent(mh);
+  if (!profile) return;
+  let el = document.getElementById("chess-trainer-profile");
+  if (!el) {
+    const boardEl = findBoard(); if (!boardEl) return;
+    el = document.createElement("div"); el.id = "chess-trainer-profile"; boardEl.appendChild(el);
+  }
+  el.innerHTML = `<div class="ct-profile-style">${profile.style}</div><div class="ct-profile-stat">Acc: ${profile.accuracy}%</div>`;
+  el.style.display = "block";
+};
+
+// Post-game summary
+let gameEnded = false;
+let summaryOverlay = null;
+
+const checkGameEnd = () => {
+  if (!currentConfig.postGameSummary || gameEnded) return;
+  const over = document.querySelector(".game-over-modal, .result-message, .game-result, [class*='game-over'], .rclock.expired");
+  if (!over) return;
+  gameEnded = true;
+  setTimeout(showPostGameSummary, 1000);
+};
+
+const showPostGameSummary = async () => {
+  const mh = globalThis.moveHistory?.exportData();
+  if (!mh?.fenHistory?.length) return;
+  let gs = null;
+  if (globalThis.analytics) gs = await globalThis.analytics.recordGame(mh);
+  const boardEl = findBoard(); if (!boardEl) return;
+  summaryOverlay = document.createElement("div");
+  summaryOverlay.id = "chess-trainer-summary";
+  summaryOverlay.innerHTML = `
+    <div class="ct-summary-card">
+      <div class="ct-summary-header">📊 Game Summary</div>
+      <div class="ct-summary-body">
+        <div class="ct-row"><span>Accuracy</span><span class="ct-val">${gs?.accuracy ?? "—"}%</span></div>
+        <div class="ct-row"><span>Avg CPL</span><span class="ct-val">${gs?.avgCpl ?? "—"}</span></div>
+        <div class="ct-row"><span>Opening</span><span class="ct-val">${mh.openingName || "—"}</span></div>
+        <div class="ct-row"><span>Moves</span><span class="ct-val">${mh.fenHistory?.length || 0}</span></div>
+        <div class="ct-row"><span>Brilliancies</span><span class="ct-val ct-brilliant">${gs?.brilliancies ?? 0}</span></div>
+        <div class="ct-row"><span>Blunders</span><span class="ct-val ct-blunder">${gs?.blunders ?? 0}</span></div>
+        <div class="ct-row"><span>Mistakes</span><span class="ct-val ct-mistake">${gs?.mistakes ?? 0}</span></div>
+      </div>
+      <button class="ct-summary-close" onclick="this.closest('#chess-trainer-summary').remove()">✕ Close</button>
+    </div>`;
+  boardEl.appendChild(summaryOverlay);
+};
+
+// Streamer mode
+let streamerHidden = false;
+const toggleStreamerMode = () => {
+  streamerHidden = !streamerHidden;
+  const boardEl = findBoard(); if (!boardEl) return;
+  boardEl.querySelectorAll("[id^='chess-trainer-']").forEach(el => {
+    el.style.visibility = streamerHidden ? "hidden" : "visible";
+  });
+};
+
+// Screenshot
+const takeScreenshot = () => {
+  const svg = document.getElementById("chess-trainer-svg");
+  if (!svg) return;
+  const content = new XMLSerializer().serializeToString(svg);
+  const blob = new Blob([content], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url;
+  a.download = `chess-arrows-${Date.now()}.svg`;
+  a.click(); URL.revokeObjectURL(url);
+};
+
+// Bookmark
+const bookmarkPosition = async () => {
+  if (!globalThis.analytics || !lastFen) return;
+  await globalThis.analytics.addBookmark(lastFen);
+  showTempBadge("📌 Bookmarked!", "chess-trainer-pattern");
+};
+
+// Enhanced analysis handler
 const handleAnalysis = (payload) => {
-  if (!currentConfig.enabled) return;
+  if (!currentConfig.enabled || streamerHidden) return;
   lastAnalysisPayload = payload;
 
-  // Record eval in move history
+  // Record eval + classify
   if (globalThis.moveHistory && payload?.fen) {
+    const prevEval = globalThis.moveHistory.evalHistory?.length
+      ? globalThis.moveHistory.evalHistory[globalThis.moveHistory.evalHistory.length - 1]?.score : null;
     globalThis.moveHistory.recordEval(payload.fen, payload);
-    // Attempt classification after eval arrives
     const classification = globalThis.moveHistory.classifyLastMove();
-    if (classification) {
-      showClassification(classification);
-      playBlunderSound(classification);
+    if (classification) { showClassification(classification); playBlunderSound(classification); }
+    checkPuzzle(prevEval, payload.bestMoves?.[0]?.score);
+    if (payload.bestMoves?.[0]?.uci) {
+      showPatterns(payload.fen, payload.bestMoves[0].uci);
+      showExplanation(payload.fen, payload.bestMoves[0].uci);
     }
+    if ((globalThis.moveHistory.fenHistory?.length || 0) % 10 === 0) updateOpponentProfile();
   }
 
-  // Respect player-side filter
+  // Player-side filter
   if (currentConfig.playerSide && currentConfig.playerSide !== "auto" && payload?.fen) {
     const active = payload.fen.split(" ")[1];
     if ((active === "w" && currentConfig.playerSide === "black") ||
       (active === "b" && currentConfig.playerSide === "white")) {
       clearArrows();
       if (evalBadge && currentConfig.showEvalBadge) evalBadge.textContent = "⏸";
-      renderWdlBar(null);
-      return;
+      renderWdlBar(null); return;
     }
   }
 
-  ensureOverlay();
-  clearArrows();
+  ensureOverlay(); clearArrows();
   const moves = payload?.bestMoves || [];
   if (!moves.length) {
     if (evalBadge && currentConfig.showEvalBadge) evalBadge.textContent = "–";
-    renderWdlBar(null);
-    return;
+    renderWdlBar(null); return;
   }
 
-  // Draw best-move arrows
+  // Best-move arrows
   const maxArrows = currentConfig.showTopArrows ? Math.min(currentConfig.topArrows || 1, moves.length) : 1;
-  for (let i = 0; i < maxArrows; i += 1) {
+  for (let i = 0; i < maxArrows; i++) {
     const mv = moves[i];
     if (!mv?.uci || mv.uci.length < 4) continue;
-    const from = mv.uci.slice(0, 2);
-    const to = mv.uci.slice(2, 4);
+    const from = mv.uci.slice(0, 2), to = mv.uci.slice(2, 4);
     const label = i === 0 ? mv.score || "" : `#${i + 1}`;
-    const offset = (i - (maxArrows - 1) / 2) * 2.2;
-    drawArrow(from, to, label, "#10b981", offset);
-    if (i === 0 && evalBadge && currentConfig.showEvalBadge) {
-      evalBadge.textContent = mv.score || "0.0";
-    }
+    drawArrow(from, to, label, "#10b981", (i - (maxArrows - 1) / 2) * 2.2);
+    if (i === 0 && evalBadge && currentConfig.showEvalBadge) evalBadge.textContent = mv.score || "0.0";
   }
 
-  // Draw threat arrow (opponent's best reply from PV)
+  // PV line
+  if (moves[0]?.pv) drawPvLine(moves[0].pv);
+
+  // Threat arrow
   if (currentConfig.showThreatArrow && moves[0]?.pv?.length >= 2) {
-    const threatUci = moves[0].pv[1];
-    if (threatUci && threatUci.length >= 4) {
-      drawArrow(threatUci.slice(0, 2), threatUci.slice(2, 4), "⚠", "#f59e0b", 0, 0.55);
-    }
+    const t = moves[0].pv[1];
+    if (t?.length >= 4) drawArrow(t.slice(0, 2), t.slice(2, 4), "⚠", "#f59e0b", 0, 0.55);
   }
 
-  // Draw blunder arrow
-  if (currentConfig.showBlunderArrow && payload?.blunderMove?.uci) {
-    const uci = payload.blunderMove.uci;
-    if (uci.length >= 4) {
-      drawArrow(uci.slice(0, 2), uci.slice(2, 4), "??", "#ef4444");
-    }
+  // Blunder arrow
+  if (currentConfig.showBlunderArrow && payload?.blunderMove?.uci?.length >= 4) {
+    const u = payload.blunderMove.uci;
+    drawArrow(u.slice(0, 2), u.slice(2, 4), "??", "#ef4444");
   }
 
-  // WDL bar
   renderWdlBar(moves[0]?.wdl ?? null);
-
-  // Opening name
   renderOpeningName(payload?.fen);
+  animateOverlay();
+  checkTablebase(payload?.fen);
+  checkGameEnd();
+  checkTimeTrouble();
 };
 
 // ── State sending ─────────────────────────────────────────────────────────
 
 const sendState = () => {
-  // Self-destruct if extension was reloaded
-  if (!isContextValid()) {
-    if (pollingId) { clearInterval(pollingId); pollingId = null; }
-    return;
-  }
-
+  if (!isContextValid()) { if (pollingId) { clearInterval(pollingId); pollingId = null; } return; }
   const now = Date.now();
   if (now - lastSent < THROTTLE_MS) return;
-  if (isPremoveActive()) return; // pause during premoves
-
+  if (isPremoveActive()) return;
   const fen = readFen();
   if (!fen || fen === lastFen) return;
-  lastSent = now;
-  lastFen = fen;
-
-  // Record position in move history
-  if (globalThis.moveHistory) {
-    globalThis.moveHistory.recordPosition(fen);
-  }
-
-  try { chrome.runtime.sendMessage({ type: "fen", fen }); } catch { /* context invalidated */ }
+  lastSent = now; lastFen = fen;
+  if (globalThis.moveHistory) globalThis.moveHistory.recordPosition(fen);
+  try { chrome.runtime.sendMessage({ type: "fen", fen }); } catch { }
 };
 
 // ── Config ────────────────────────────────────────────────────────────────
@@ -564,83 +783,62 @@ const applyConfig = (config) => {
 // ── Keyboard shortcuts ────────────────────────────────────────────────────
 
 const handleKeyboard = (e) => {
-  if (!currentConfig.keyboardShortcuts) return;
-  if (!e.altKey) return;
-
-  if (e.key === "t" || e.key === "T") {
+  if (!currentConfig.keyboardShortcuts || !e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "t") { e.preventDefault(); currentConfig.enabled = !currentConfig.enabled; applyConfig(currentConfig); try { chrome.runtime.sendMessage({ type: "saveConfig", config: currentConfig }); } catch { } }
+  if (k === "e") { e.preventDefault(); currentConfig.showEvalBadge = !currentConfig.showEvalBadge; applyConfig(currentConfig); try { chrome.runtime.sendMessage({ type: "saveConfig", config: currentConfig }); } catch { } }
+  if (k === "a") {
     e.preventDefault();
-    currentConfig.enabled = !currentConfig.enabled;
-    applyConfig(currentConfig);
-    try { chrome.runtime.sendMessage({ type: "saveConfig", config: currentConfig }); } catch { }
-  }
-  if (e.key === "e" || e.key === "E") {
-    e.preventDefault();
-    currentConfig.showEvalBadge = !currentConfig.showEvalBadge;
-    applyConfig(currentConfig);
-    try { chrome.runtime.sendMessage({ type: "saveConfig", config: currentConfig }); } catch { }
-  }
-  if (e.key === "a" || e.key === "A") {
-    e.preventDefault();
-    // Cycle through arrows: toggle showTopArrows, then increase count
-    if (!currentConfig.showTopArrows) {
-      currentConfig.showTopArrows = true;
-      currentConfig.topArrows = 2;
-    } else if (currentConfig.topArrows < 5) {
-      currentConfig.topArrows += 1;
-    } else {
-      currentConfig.showTopArrows = false;
-      currentConfig.topArrows = 1;
-    }
-    applyConfig(currentConfig);
-    try { chrome.runtime.sendMessage({ type: "saveConfig", config: currentConfig }); } catch { }
-    // Re-render with current payload
+    if (!currentConfig.showTopArrows) { currentConfig.showTopArrows = true; currentConfig.topArrows = 2; }
+    else if (currentConfig.topArrows < 5) currentConfig.topArrows++;
+    else { currentConfig.showTopArrows = false; currentConfig.topArrows = 1; }
+    applyConfig(currentConfig); try { chrome.runtime.sendMessage({ type: "saveConfig", config: currentConfig }); } catch { }
     if (lastAnalysisPayload) handleAnalysis(lastAnalysisPayload);
   }
+  if (k === "h") { e.preventDefault(); toggleStreamerMode(); }
+  if (k === "b") { e.preventDefault(); bookmarkPosition(); }
+  if (k === "s") { e.preventDefault(); takeScreenshot(); }
 };
 
-// ── PGN export support (for popup.js messages) ────────────────────────────
+// ── Message handler ───────────────────────────────────────────────────────
 
 const handleMessage = (msg, _sender, sendResponse) => {
   if (msg?.type === "analysis") handleAnalysis(msg);
   if (msg?.type === "config") applyConfig(msg.config);
-  if (msg?.type === "getPgnData") {
-    const data = globalThis.moveHistory?.exportData() ?? null;
-    sendResponse({ data });
-    return true;
+  if (msg?.type === "getPgnData") { sendResponse({ data: globalThis.moveHistory?.exportData() ?? null }); return true; }
+  if (msg?.type === "getStats") { globalThis.analytics?.getStats().then(s => sendResponse({ stats: s })); return true; }
+  if (msg?.type === "getBookmarks") { globalThis.analytics?.getBookmarks().then(b => sendResponse({ bookmarks: b })); return true; }
+  if (msg?.type === "copyFen") { if (lastFen) navigator.clipboard.writeText(lastFen).catch(() => { }); sendResponse({ ok: true }); return true; }
+  if (msg?.type === "contextAction") {
+    if (msg.action === "copyFen" && lastFen) navigator.clipboard.writeText(lastFen).catch(() => { });
+    if (msg.action === "bookmark") bookmarkPosition();
+    if (msg.action === "screenshot") takeScreenshot();
   }
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
 const init = async () => {
-  // Skip Lichess if disabled
   if (IS_LICHESS && !currentConfig.enableLichess) return;
-
   await loadOpeningsDb();
   ensureOverlay();
   pollingId = setInterval(sendState, THROTTLE_MS);
-
+  timeTroubleInterval = setInterval(() => {
+    if (isContextValid()) { checkTimeTrouble(); checkGameEnd(); }
+    else if (timeTroubleInterval) clearInterval(timeTroubleInterval);
+  }, 1000);
   chrome.runtime.onMessage.addListener(handleMessage);
   document.addEventListener("keydown", handleKeyboard);
-
-  // Listen for move classification events
   document.addEventListener("game:moveClassified", (e) => {
     const { classification } = e.detail || {};
-    if (classification) {
-      showClassification(classification);
-      playBlunderSound(classification);
-    }
+    if (classification) { showClassification(classification); playBlunderSound(classification); }
   });
-
-  try {
-    chrome.runtime.sendMessage({ type: "getConfig" }, (resp) => {
-      if (resp?.config) applyConfig(resp.config);
-    });
-  } catch { /* context invalidated */ }
+  document.addEventListener("game:newGame", () => {
+    gameEnded = false; lastTablebaseFen = null;
+    if (summaryOverlay) { summaryOverlay.remove(); summaryOverlay = null; }
+  });
+  try { chrome.runtime.sendMessage({ type: "getConfig" }, (r) => { if (r?.config) applyConfig(r.config); }); } catch { }
 };
 
-if (document.readyState === "complete" || document.readyState === "interactive") {
-  init();
-} else {
-  window.addEventListener("DOMContentLoaded", init, { once: true });
-}
+if (document.readyState === "complete" || document.readyState === "interactive") init();
+else window.addEventListener("DOMContentLoaded", init, { once: true });

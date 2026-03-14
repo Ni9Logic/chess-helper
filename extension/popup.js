@@ -1,176 +1,177 @@
-const fields = [
-  "enabled", "autoAnalyze",
-  "showEvalBadge", "showTopArrows", "showBlunderArrow", "showThreatArrow",
-  "showWdlBar", "showOpeningName", "showMoveClassification",
-  "blunderSound", "keyboardShortcuts", "pauseOnPremove", "enableLichess",
-  "topArrows", "depth", "multipv", "skillLevel",
-  "orientation", "playerSide",
-  "darkTheme",
+// ---------------------------------------------------------------------------
+// Popup Script — Tabbed UI with settings, stats dashboard, and shortcuts
+// ---------------------------------------------------------------------------
+
+const FIELDS = [
+  "enabled", "autoAnalyze", "showEvalBadge", "showTopArrows", "showPvLine",
+  "arrowAnimation", "showThreatArrow", "showWdlBar", "showOpeningName",
+  "showMoveClassification", "timeTroubleAlert", "endgameTablebase",
+  "opponentProfiler", "moveExplanations", "puzzleMode", "patternRecognition",
+  "postGameSummary", "blunderSound", "pauseOnPremove", "keyboardShortcuts",
+  "positionBookmarks", "darkTheme", "enableLichess",
 ];
 
-const checkboxFields = [
-  "enabled", "autoAnalyze",
-  "showEvalBadge", "showTopArrows", "showBlunderArrow", "showThreatArrow",
-  "showWdlBar", "showOpeningName", "showMoveClassification",
-  "blunderSound", "keyboardShortcuts", "pauseOnPremove", "enableLichess",
-  "darkTheme",
-];
+const $ = (id) => document.getElementById(id);
 
-const sliderFields = ["topArrows", "depth", "multipv", "skillLevel"];
-const selectFields = ["orientation", "playerSide"];
+// ── Tab switching ─────────────────────────────────────────────────────
 
-const setStatus = (state, message = "") => {
-  const dot = document.getElementById("status-dot");
-  dot.className = "dot " + (state === "ok" ? "green" : state === "err" ? "red" : "gray");
-  const statusMsg = document.getElementById("status-msg");
-  if (statusMsg) statusMsg.textContent = message;
-};
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+    btn.classList.add("active");
+    $(`tab-${btn.dataset.tab}`).classList.add("active");
+    if (btn.dataset.tab === "stats") loadStats();
+  });
+});
+
+// ── Config load/save ──────────────────────────────────────────────────
 
 const buildConfig = () => {
-  const cfg = {};
-  fields.forEach((f) => {
-    const el = document.getElementById(f);
-    if (!el) return;
-    if (el.type === "checkbox") cfg[f] = el.checked;
-    else if (el.tagName === "SELECT") cfg[f] = el.value;
-    else cfg[f] = Number(el.value);
-  });
-  return cfg;
+  const config = {};
+  for (const f of FIELDS) {
+    const el = $(f);
+    if (!el) continue;
+    config[f] = el.type === "checkbox" ? el.checked : el.value;
+  }
+  const depth = $("depth");
+  if (depth) config.depth = Number(depth.value);
+  const multipv = $("multipv");
+  if (multipv) config.multipv = Number(multipv.value);
+  return config;
 };
 
-const applyTheme = (dark) => {
-  document.body.classList.toggle("light-theme", !dark);
+const applyConfig = (config) => {
+  for (const f of FIELDS) {
+    const el = $(f);
+    if (!el) continue;
+    if (el.type === "checkbox") el.checked = !!config[f];
+    else if (el.tagName === "SELECT") el.value = String(config[f] ?? "");
+  }
+  const depth = $("depth");
+  if (depth && config.depth) {
+    depth.value = config.depth;
+    $("depthVal").textContent = config.depth;
+  }
+  const multipv = $("multipv");
+  if (multipv && config.multipv) multipv.value = String(config.multipv);
+
+  // Theme
+  document.body.classList.toggle("light", !config.darkTheme);
 };
 
-const load = () => {
-  chrome.runtime.sendMessage({ type: "getConfig" }, (resp) => {
-    const cfg = resp?.config;
-    if (!cfg) {
-      setStatus("err", "Cannot reach background");
-      return;
-    }
-    fields.forEach((f) => {
-      const el = document.getElementById(f);
-      if (!el) return;
-      if (el.type === "checkbox") el.checked = Boolean(cfg[f]);
-      else el.value = cfg[f];
-    });
-    syncLabels();
-    applyTheme(cfg.darkTheme !== false);
-    setStatus(cfg.enabled ? "ok" : "gray");
-  });
+const saveConfig = () => {
+  const config = buildConfig();
+  chrome.runtime.sendMessage({ type: "saveConfig", config });
 };
 
-const syncLabels = () => {
-  document.getElementById("topArrowsLabel").textContent = `${document.getElementById("topArrows").value} arrows`;
-  document.getElementById("depthLabel").textContent = `Depth ${document.getElementById("depth").value}`;
-  document.getElementById("multipvLabel").textContent = `Lines ${document.getElementById("multipv").value}`;
-  document.getElementById("skillLabel").textContent = `Skill ${document.getElementById("skillLevel").value} / 20`;
-};
-
-// Debounced auto-save
-let saveTimer = null;
+let saveTimeout;
 const debouncedSave = () => {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    const cfg = buildConfig();
-    chrome.runtime.sendMessage({ type: "saveConfig", config: cfg }, (resp) => {
-      if (resp?.ok) setStatus(cfg.enabled ? "ok" : "gray", "Saved");
-      else setStatus("err", "Save failed");
-    });
-  }, 400);
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(saveConfig, 300);
 };
 
-// PGN export
-const exportPgn = () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs[0]?.id) return;
-    chrome.tabs.sendMessage(tabs[0].id, { type: "getPgnData" }, (resp) => {
-      const data = resp?.data;
-      if (!data || !data.fenHistory?.length) {
-        setStatus("err", "No game data");
-        return;
-      }
-
-      let pgn = "";
-      pgn += `[Event "Chess Trainer Analysis"]\n`;
-      pgn += `[Site "${location.href}"]\n`;
-      pgn += `[Date "${new Date(data.startedAt).toISOString().slice(0, 10)}"]\n`;
-      if (data.openingName) pgn += `[Opening "${data.openingName}"]\n`;
-      pgn += `[Annotator "Chess Trainer Extension"]\n\n`;
-
-      // Build simplified PGN from FEN history with eval comments
-      const moveTexts = [];
-      for (let i = 1; i < data.fenHistory.length; i++) {
-        const moveNum = Math.ceil(i / 2);
-        const isWhite = i % 2 === 1;
-        const prefix = isWhite ? `${moveNum}. ` : "";
-
-        let moveText = `${prefix}...`; // placeholder since we don't have SAN
-        const evalInfo = data.evalHistory[i];
-        const classify = data.classifications[i - 1];
-
-        if (evalInfo?.score) {
-          moveText += ` {${evalInfo.score}`;
-          if (classify) moveText += ` [${classify}]`;
-          moveText += "}";
-        }
-        moveTexts.push(moveText);
-      }
-      pgn += moveTexts.join(" ") + " *\n";
-
-      // Add FEN history as comments
-      pgn += `\n{ FEN History: ${data.fenHistory.length} positions }\n`;
-
-      // Download
-      const blob = new Blob([pgn], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `chess-trainer-${Date.now()}.pgn`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setStatus("ok", "PGN exported");
-    });
-  });
-};
+// ── Event listeners ───────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
-  load();
-
-  // Slider labels
-  sliderFields.forEach((id) => {
-    document.getElementById(id).addEventListener("input", () => {
-      syncLabels();
-      debouncedSave();
-    });
+  chrome.runtime.sendMessage({ type: "getConfig" }, (resp) => {
+    if (resp?.config) applyConfig({ ...globalThis.defaultConfig, ...resp.config });
   });
 
-  // Checkbox auto-save
-  checkboxFields.forEach((id) => {
-    const el = document.getElementById(id);
-    if (!el) return;
+  // Auto-save on all inputs
+  document.querySelectorAll("input, select").forEach(el => {
     el.addEventListener("change", () => {
-      if (id === "darkTheme") applyTheme(el.checked);
+      if (el.id === "depth") $("depthVal").textContent = el.value;
+      if (el.id === "darkTheme") document.body.classList.toggle("light", !el.checked);
       debouncedSave();
     });
+    if (el.type === "range") {
+      el.addEventListener("input", () => { $("depthVal").textContent = el.value; });
+    }
   });
+});
 
-  // Select auto-save
-  selectFields.forEach((id) => {
-    document.getElementById(id).addEventListener("change", debouncedSave);
-  });
+// ── PGN export ────────────────────────────────────────────────────────
 
-  // Manual save
-  document.getElementById("save").addEventListener("click", () => {
-    if (saveTimer) clearTimeout(saveTimer);
-    const cfg = buildConfig();
-    chrome.runtime.sendMessage({ type: "saveConfig", config: cfg }, (resp) => {
-      if (resp?.ok) setStatus(cfg.enabled ? "ok" : "gray", "Saved ✓");
-      else setStatus("err", "Save failed");
+$("exportPgn")?.addEventListener("click", () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.sendMessage(tabs[0].id, { type: "getPgnData" }, (resp) => {
+      const data = resp?.data;
+      if (!data?.fenHistory?.length) { alert("No game data available"); return; }
+      const lines = ["[Event \"Live Game\"]", `[Site \"${data.site || "?"}\"]`, `[Date \"${new Date().toISOString().split("T")[0]}\"]`, ""];
+      if (data.moveList) lines.push(data.moveList);
+      else lines.push(data.fenHistory.join("\n"));
+      const blob = new Blob([lines.join("\n")], { type: "application/x-chess-pgn" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `game-${Date.now()}.pgn`; a.click();
+      URL.revokeObjectURL(url);
     });
   });
-
-  // PGN export
-  document.getElementById("exportPgn").addEventListener("click", exportPgn);
 });
+
+// ── Copy FEN ──────────────────────────────────────────────────────────
+
+$("copyFen")?.addEventListener("click", () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.sendMessage(tabs[0].id, { type: "copyFen" }, () => {
+      const btn = $("copyFen");
+      btn.textContent = "✅ Copied!";
+      setTimeout(() => { btn.textContent = "📋 Copy FEN"; }, 1500);
+    });
+  });
+});
+
+// ── Stats Dashboard ───────────────────────────────────────────────────
+
+const loadStats = () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]?.id) return;
+    chrome.tabs.sendMessage(tabs[0].id, { type: "getStats" }, (resp) => {
+      renderStats(resp?.stats);
+    });
+    chrome.tabs.sendMessage(tabs[0].id, { type: "getBookmarks" }, (resp) => {
+      renderBookmarks(resp?.bookmarks);
+    });
+  });
+};
+
+const renderStats = (stats) => {
+  const el = $("statsContent");
+  if (!stats) {
+    el.innerHTML = '<p class="muted">No games recorded yet. Play a game with the extension active!</p>';
+    return;
+  }
+  el.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-val">${stats.avgAccuracy}%</div>
+        <div class="stat-label">Avg Accuracy (10g)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">${stats.avgCpl}</div>
+        <div class="stat-label">Avg CPL (10g)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">${stats.gamesPlayed}</div>
+        <div class="stat-label">Games Played</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">${stats.totalBrilliancies}</div>
+        <div class="stat-label">Brilliancies (10g)</div>
+      </div>
+    </div>
+    <div class="section-label">Top Openings</div>
+    <div class="opening-list">
+      ${stats.topOpenings.map(o => `<div><span>${o.name}</span><span>${o.count}× · ${o.avgAccuracy}%</span></div>`).join("")}
+    </div>
+  `;
+};
+
+const renderBookmarks = (bookmarks) => {
+  const el = $("bookmarksList");
+  if (!bookmarks?.length) { el.innerHTML = '<span class="muted">No bookmarks yet</span>'; return; }
+  el.innerHTML = bookmarks.slice(-10).reverse().map(b =>
+    `<div class="bm-item"><span class="bm-fen">${b.fen.split(" ")[0]}</span><span class="muted">${new Date(b.date).toLocaleDateString()}</span></div>`
+  ).join("");
+};

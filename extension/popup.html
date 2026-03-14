@@ -1,176 +1,103 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Chess Trainer</title>
-  <link rel="stylesheet" href="popup.css" />
+  <link rel="stylesheet" href="popup.css">
 </head>
 
 <body>
-  <div class="wrap">
+  <div id="app">
     <header>
-      <h1>♞ Trainer</h1>
-      <div style="display:flex;align-items:center;gap:6px">
-        <span id="status-msg" style="font-size:10px;color:#94a3b8"></span>
-        <span id="status-dot" class="dot gray"></span>
-      </div>
+      <h1>♟ Chess Trainer</h1>
+      <span class="version">v0.3.0</span>
     </header>
 
-    <!-- Core toggles -->
-    <label class="row">
-      <input type="checkbox" id="enabled" />
-      <div>
-        <div class="title">Enabled</div>
-        <div class="hint">Send FEN and draw overlay</div>
-      </div>
-    </label>
-
-    <label class="row">
-      <input type="checkbox" id="autoAnalyze" />
-      <div>
-        <div class="title">Auto analyze</div>
-        <div class="hint">Send to Stockfish at ~2 Hz</div>
-      </div>
-    </label>
-
-    <!-- Selects -->
-    <label class="row">
-      <div style="flex:1">
-        <div class="title">Board side</div>
-        <div class="hint">Force orientation when auto is wrong</div>
-      </div>
-      <select id="orientation">
-        <option value="auto">Auto detect</option>
-        <option value="white">I am White</option>
-        <option value="black">I am Black</option>
-      </select>
-    </label>
-
-    <label class="row">
-      <div style="flex:1">
-        <div class="title">Show moves for</div>
-        <div class="hint">Hide arrows when it's not my turn</div>
-      </div>
-      <select id="playerSide">
-        <option value="auto">Both sides</option>
-        <option value="white">Only White moves</option>
-        <option value="black">Only Black moves</option>
-      </select>
-    </label>
-
-    <!-- Overlay checkboxes -->
-    <div class="section-label">Overlays</div>
-
-    <label class="row compact">
-      <input type="checkbox" id="showEvalBadge" />
-      <div class="title">Eval badge</div>
-    </label>
-
-    <label class="row compact">
-      <input type="checkbox" id="showTopArrows" />
-      <div class="title">Top arrows</div>
-    </label>
-
-    <label class="row compact">
-      <input type="checkbox" id="showBlunderArrow" />
-      <div class="title">Blunder arrow</div>
-    </label>
-
-    <label class="row compact">
-      <input type="checkbox" id="showThreatArrow" />
-      <div class="title">Threat arrow</div>
-    </label>
-
-    <label class="row compact">
-      <input type="checkbox" id="showWdlBar" />
-      <div class="title">W/D/L bar</div>
-    </label>
-
-    <label class="row compact">
-      <input type="checkbox" id="showOpeningName" />
-      <div class="title">Opening name</div>
-    </label>
-
-    <label class="row compact">
-      <input type="checkbox" id="showMoveClassification" />
-      <div class="title">Move classification</div>
-    </label>
-
-    <!-- Behaviour checkboxes -->
-    <div class="section-label">Behaviour</div>
-
-    <label class="row compact">
-      <input type="checkbox" id="blunderSound" />
-      <div class="title">Blunder sound</div>
-    </label>
-
-    <label class="row compact">
-      <input type="checkbox" id="keyboardShortcuts" />
-      <div class="title">Keyboard shortcuts</div>
-    </label>
-
-    <label class="row compact">
-      <input type="checkbox" id="pauseOnPremove" />
-      <div class="title">Pause on premove</div>
-    </label>
-
-    <label class="row compact">
-      <input type="checkbox" id="enableLichess" />
-      <div class="title">Lichess support</div>
-    </label>
-
-    <!-- Sliders -->
-    <div class="section-label">Engine</div>
-
-    <div class="row slider">
-      <div>
-        <div class="title">Top arrows count</div>
-        <div class="hint" id="topArrowsLabel"></div>
-      </div>
-      <input type="range" id="topArrows" min="1" max="5" step="1" value="3" />
+    <!-- Tab Navigation -->
+    <div class="tabs">
+      <button class="tab active" data-tab="settings">Settings</button>
+      <button class="tab" data-tab="stats">Dashboard</button>
+      <button class="tab" data-tab="shortcuts">Keys</button>
     </div>
 
-    <div class="row slider">
-      <div>
-        <div class="title">Depth</div>
-        <div class="hint" id="depthLabel"></div>
+    <!-- Settings Tab -->
+    <div class="tab-content active" id="tab-settings">
+
+      <div class="section-label">Core</div>
+      <label class="row"><span>Enabled</span><input type="checkbox" id="enabled"></label>
+      <label class="row"><span>Auto-Analyze</span><input type="checkbox" id="autoAnalyze"></label>
+      <label class="row"><span>Depth</span><input type="range" id="depth" min="4" max="20" step="1"><span id="depthVal"
+          class="range-val"></span></label>
+      <label class="row"><span>Lines</span><select id="multipv">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="5">5</option>
+        </select></label>
+
+      <div class="section-label">Overlays</div>
+      <label class="row"><span>Eval Badge</span><input type="checkbox" id="showEvalBadge"></label>
+      <label class="row"><span>Top Arrows</span><input type="checkbox" id="showTopArrows"></label>
+      <label class="row"><span>PV Line</span><input type="checkbox" id="showPvLine"></label>
+      <label class="row"><span>Arrow Animation</span><input type="checkbox" id="arrowAnimation"></label>
+      <label class="row"><span>Threat Arrow</span><input type="checkbox" id="showThreatArrow"></label>
+      <label class="row"><span>WDL Bar</span><input type="checkbox" id="showWdlBar"></label>
+      <label class="row"><span>Opening Name</span><input type="checkbox" id="showOpeningName"></label>
+      <label class="row"><span>Move Classification</span><input type="checkbox" id="showMoveClassification"></label>
+
+      <div class="section-label">Intelligence</div>
+      <label class="row"><span>Time Trouble Alert</span><input type="checkbox" id="timeTroubleAlert"></label>
+      <label class="row"><span>Endgame Tablebase</span><input type="checkbox" id="endgameTablebase"></label>
+      <label class="row"><span>Opponent Profiler</span><input type="checkbox" id="opponentProfiler"></label>
+
+      <div class="section-label">Training</div>
+      <label class="row"><span>Move Explanations</span><input type="checkbox" id="moveExplanations"></label>
+      <label class="row"><span>Puzzle Detection</span><input type="checkbox" id="puzzleMode"></label>
+      <label class="row"><span>Pattern Recognition</span><input type="checkbox" id="patternRecognition"></label>
+      <label class="row"><span>Post-Game Summary</span><input type="checkbox" id="postGameSummary"></label>
+
+      <div class="section-label">Alerts & UX</div>
+      <label class="row"><span>Blunder Sound</span><input type="checkbox" id="blunderSound"></label>
+      <label class="row"><span>Premove Pause</span><input type="checkbox" id="pauseOnPremove"></label>
+      <label class="row"><span>Keyboard Shortcuts</span><input type="checkbox" id="keyboardShortcuts"></label>
+      <label class="row"><span>Position Bookmarks</span><input type="checkbox" id="positionBookmarks"></label>
+
+      <div class="section-label">Appearance</div>
+      <label class="row"><span>Dark Theme</span><input type="checkbox" id="darkTheme"></label>
+      <label class="row"><span>Lichess Support</span><input type="checkbox" id="enableLichess"></label>
+
+      <div class="actions-row">
+        <button id="exportPgn" class="btn">📄 Export PGN</button>
+        <button id="copyFen" class="btn">📋 Copy FEN</button>
       </div>
-      <input type="range" id="depth" min="8" max="18" step="1" />
     </div>
 
-    <div class="row slider">
-      <div>
-        <div class="title">MultiPV</div>
-        <div class="hint" id="multipvLabel"></div>
+    <!-- Dashboard Tab -->
+    <div class="tab-content" id="tab-stats">
+      <div id="statsContent">
+        <p class="muted">Loading stats…</p>
       </div>
-      <input type="range" id="multipv" min="1" max="5" step="1" />
-    </div>
-
-    <div class="row slider">
-      <div>
-        <div class="title">Skill / Accuracy</div>
-        <div class="hint" id="skillLabel"></div>
+      <div id="bookmarksContent" style="margin-top:10px;">
+        <div class="section-label">Bookmarks</div>
+        <div id="bookmarksList" class="muted">No bookmarks yet</div>
       </div>
-      <input type="range" id="skillLevel" min="0" max="20" step="1" />
     </div>
 
-    <!-- Theme -->
-    <div class="section-label">Appearance</div>
-
-    <label class="row compact">
-      <input type="checkbox" id="darkTheme" />
-      <div class="title">Dark theme</div>
-    </label>
-
-    <!-- Actions -->
-    <div class="actions">
-      <button id="save">Save & Push ↗</button>
-      <button id="exportPgn" class="secondary">Export PGN</button>
+    <!-- Shortcuts Tab -->
+    <div class="tab-content" id="tab-shortcuts">
+      <div class="shortcuts-grid">
+        <div class="sc"><kbd>Alt+T</kbd> Toggle on/off</div>
+        <div class="sc"><kbd>Alt+E</kbd> Toggle eval</div>
+        <div class="sc"><kbd>Alt+A</kbd> Cycle arrows</div>
+        <div class="sc"><kbd>Alt+H</kbd> Streamer mode</div>
+        <div class="sc"><kbd>Alt+B</kbd> Bookmark position</div>
+        <div class="sc"><kbd>Alt+S</kbd> Screenshot arrows</div>
+        <div class="sc"><kbd>Right-click</kbd> Context menu</div>
+      </div>
     </div>
-
-    <div class="shortcut-hint">Alt+T toggle · Alt+E eval · Alt+A arrows</div>
   </div>
+
   <script src="config.js"></script>
   <script src="popup.js"></script>
 </body>
