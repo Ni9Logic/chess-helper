@@ -753,7 +753,10 @@ const handleAnalysis = (payload) => {
     const width = Math.max(0.5, 1.2 - i * 0.15);
     const alpha = Math.max(0.45, 0.85 - i * 0.1);
     drawArrow(from, to, label, arrowColor, curve, alpha, width);
-    if (i === 0 && evalBadge && currentConfig.showEvalBadge) evalBadge.textContent = mv.score || "0.0";
+    if (i === 0 && evalBadge && currentConfig.showEvalBadge) {
+      const depthTag = payload.partial ? ` d${payload.currentDepth || "?"}` : "";
+      evalBadge.textContent = (mv.score || "0.0") + depthTag;
+    }
   }
 
   // PV line
@@ -793,6 +796,16 @@ const sendState = () => {
   try { chrome.runtime.sendMessage({ type: "fen", fen }); } catch { }
 };
 
+// Force immediate re-analysis — bypasses throttle and FEN dedup
+const forceAnalyze = () => {
+  if (!isContextValid()) return;
+  const fen = readFen();
+  if (!fen) return;
+  lastFen = fen;
+  lastSent = Date.now();
+  try { chrome.runtime.sendMessage({ type: "fen", fen }); } catch { }
+};
+
 // ── Config ────────────────────────────────────────────────────────────────
 
 const applyConfig = (config) => {
@@ -823,7 +836,7 @@ const handleKeyboard = (e) => {
     applyConfig(currentConfig); try { chrome.runtime.sendMessage({ type: "saveConfig", config: currentConfig }); } catch { }
     if (lastAnalysisPayload) handleAnalysis(lastAnalysisPayload);
   }
-  if (k === "h") { e.preventDefault(); toggleStreamerMode(); }
+  if (k === "h") { e.preventDefault(); toggleStreamerMode(); if (!streamerHidden) forceAnalyze(); }
   if (k === "b") { e.preventDefault(); bookmarkPosition(); }
   if (k === "s") { e.preventDefault(); takeScreenshot(); }
 };

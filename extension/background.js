@@ -94,22 +94,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
-  // Engine result from offscreen document
+  // Engine result from offscreen document (partial or final)
   if (msg?.type === "engineResult") {
-    const { id, bestMoves, aborted } = msg;
+    const { id, bestMoves, aborted, partial, currentDepth, targetDepth } = msg;
+
+    // Progressive (partial) results: forward immediately to the tab
+    if (partial && id === latestRequestId && latestTabId && bestMoves?.length) {
+      const payload = {
+        type: "analysis",
+        source: "local",
+        fen: latestFen,
+        generatedAt: Date.now(),
+        id,
+        bestMoves,
+        partial: true,
+        currentDepth,
+        targetDepth,
+      };
+      loadConfig().then(config => {
+        chrome.tabs.sendMessage(latestTabId, { ...payload, config });
+      });
+      return;
+    }
+
+    // Final result
     const pending = pendingRequests[id];
     if (pending && !aborted) {
       delete pendingRequests[id];
       pending.resolve({ bestMoves });
     } else if (pending && aborted) {
       delete pendingRequests[id];
-      pending.resolve({ bestMoves: [] });
+      // Send best-so-far even on abort instead of empty
+      pending.resolve({ bestMoves: bestMoves?.length ? bestMoves : [] });
     }
     return;
   }
 });
 
 let latestRequestId = null;
+let latestTabId = null;
+let latestFen = null;
 
 const handleFen = async (fen, tabId) => {
   const config = await loadConfig();
@@ -119,18 +143,20 @@ const handleFen = async (fen, tabId) => {
 
   const id = crypto.randomUUID();
   latestRequestId = id;
+  latestTabId = tabId;
+  latestFen = fen;
 
   try {
-    // Send analysis request to offscreen document
     const resultPromise = new Promise((resolve, reject) => {
       pendingRequests[id] = { resolve, reject };
-      // Timeout safety
+      // Generous timeout: match the offscreen timeout
+      const timeout = Math.min(130000, Math.max(25000, config.depth * 3500));
       setTimeout(() => {
         if (pendingRequests[id]) {
           delete pendingRequests[id];
           reject(new Error("timeout"));
         }
-      }, 30000);
+      }, timeout);
     });
 
     chrome.runtime.sendMessage({
