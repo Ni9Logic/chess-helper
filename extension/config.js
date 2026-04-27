@@ -10,6 +10,8 @@ const defaultConfig = {
     skillLevel: 12,
     orientation: "auto",
     playerSide: "auto",
+    searchMode: "depth",     // "depth" or "time"
+    searchTime: 3000,        // ms (used when searchMode=time)
 
     // Overlays
     showEvalBadge: true,
@@ -28,6 +30,8 @@ const defaultConfig = {
     timeTroubleThreshold: 30,  // seconds
     endgameTablebase: true,
     opponentProfiler: false,
+    moveComparison: true,      // show what engine recommended after your move
+    comparisonOnly: false,     // hide everything, only show comparison arrow for 2s
 
     // Training
     moveExplanations: false,
@@ -48,6 +52,9 @@ const defaultConfig = {
 
     // Appearance
     darkTheme: true,
+    stealthMode: false,
+    stealthDotSize: 0.7,       // 0.3 – 2.0
+    stealthDotOpacity: 0.18,   // 0.05 – 0.5
 
     // Multi-site
     enableLichess: true,

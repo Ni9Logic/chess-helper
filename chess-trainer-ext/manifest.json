@@ -1,0 +1,80 @@
+{
+  "manifest_version": 3,
+  "name": "Chess Trainer Overlay",
+  "version": "0.4.0",
+  "description": "Reads chess.com & lichess.org board, runs Stockfish locally via WASM, overlays best move arrows, opening names, WDL bar, and move classifications.",
+  "permissions": [
+    "scripting",
+    "tabs",
+    "storage",
+    "alarms",
+    "offscreen",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://www.chess.com/*",
+    "https://lichess.org/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.chess.com/*",
+        "https://lichess.org/*"
+      ],
+      "js": [
+        "config.js",
+        "moveHistory.js",
+        "tactics.js",
+        "analytics.js",
+        "lichess.js",
+        "content.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "sounds/*",
+        "engine/*",
+        "openings.json"
+      ],
+      "matches": [
+        "https://www.chess.com/*",
+        "https://lichess.org/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_title": "Chess Trainer",
+    "default_popup": "popup.html"
+  },
+  "commands": {
+    "toggle-enabled": {
+      "suggested_key": {
+        "default": "Alt+T"
+      },
+      "description": "Toggle overlay on/off"
+    },
+    "toggle-eval": {
+      "suggested_key": {
+        "default": "Alt+E"
+      },
+      "description": "Toggle eval badge"
+    }
+  }
+}

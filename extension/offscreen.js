@@ -162,6 +162,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             depth: msg.depth || 12,
             multipv: msg.multipv || 3,
             skillLevel: msg.skillLevel ?? 20,
+            searchMode: msg.searchMode || "depth",
+            searchTime: msg.searchTime || 3000,
             aborted: false,
         };
 
@@ -175,8 +177,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendCmd(`setoption name MultiPV value ${job.multipv}`);
         sendCmd(`setoption name Skill Level value ${job.skillLevel}`);
         sendCmd("setoption name UCI_ShowWDL value true");
-        // Set hash to 32MB for better position caching
-        sendCmd("setoption name Hash value 32");
+        // Set hash to 128MB for better transposition table performance
+        sendCmd("setoption name Hash value 128");
 
         // Only clear hash on new game, not every position
         if (isNewGame) {
@@ -189,11 +191,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         setTimeout(() => {
             if (currentJob !== job || job.aborted) return;
             sendCmd(`position fen ${job.fen}`);
-            sendCmd(`go depth ${job.depth}`);
+            if (job.searchMode === "time") {
+                sendCmd(`go movetime ${job.searchTime}`);
+            } else {
+                sendCmd(`go depth ${job.depth}`);
+            }
         }, 20);
 
-        // Generous timeout: 3s per depth level, min 20s, max 120s
-        const timeout = Math.min(120000, Math.max(20000, job.depth * 3000));
+        // Timeout: for time mode use searchTime + 5s buffer; for depth mode 3s/depth
+        const timeout = job.searchMode === "time"
+            ? job.searchTime + 5000
+            : Math.min(120000, Math.max(20000, job.depth * 3000));
         jobTimeout = setTimeout(() => {
             if (currentJob === job && !job.aborted) {
                 // Don't abort — just send stop and let bestmove come through

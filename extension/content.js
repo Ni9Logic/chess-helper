@@ -25,6 +25,8 @@ let currentConfig = { ...globalThis.defaultConfig };
 let openingsDb = null;
 let blunderAudio = null;
 let lastAnalysisPayload = null;
+let lastEngineRec = null;     // { uci, score, fen } — engine's pick before user moved
+let comparisonBadge = null;
 
 // ── chess.com helpers (Lichess uses lichess.js) ───────────────────────────
 
@@ -292,6 +294,12 @@ const ensureOverlay = () => {
     classificationBadge.id = "chess-trainer-classification";
     classificationBadge.style.display = "none";
     boardEl.appendChild(classificationBadge);
+
+    // Move comparison badge
+    comparisonBadge = document.createElement("div");
+    comparisonBadge.id = "chess-trainer-comparison";
+    comparisonBadge.style.display = "none";
+    boardEl.appendChild(comparisonBadge);
   }
   syncOverlayTransform(boardEl);
   return boardOverlay;
@@ -330,6 +338,24 @@ const drawArrow = (fromSq, toSq, label = "", color = "#10b981", curvature = 0, o
   const y1 = (dispRank(fromRank) + 0.5) * (100 / 8);
   const x2 = (dispFile(toFile) + 0.5) * (100 / 8);
   const y2 = (dispRank(toRank) + 0.5) * (100 / 8);
+
+  // ── Stealth dot mode: tiny near-invisible dots instead of arrows ──
+  if (currentConfig.stealthMode) {
+    const dotR = currentConfig.stealthDotSize ?? 0.7;
+    const dotAlpha = currentConfig.stealthDotOpacity ?? 0.18;
+    const dotColor = "#000";
+    const dot1 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot1.setAttribute("cx", x1); dot1.setAttribute("cy", y1);
+    dot1.setAttribute("r", dotR);
+    dot1.setAttribute("fill", dotColor); dot1.setAttribute("fill-opacity", String(dotAlpha));
+    svg.appendChild(dot1);
+    const dot2 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot2.setAttribute("cx", x2); dot2.setAttribute("cy", y2);
+    dot2.setAttribute("r", dotR);
+    dot2.setAttribute("fill", dotColor); dot2.setAttribute("fill-opacity", String(dotAlpha));
+    svg.appendChild(dot2);
+    return; // skip arrow + label entirely
+  }
 
   // Compute control point for quadratic bezier curve
   const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
@@ -702,6 +728,72 @@ const bookmarkPosition = async () => {
   showTempBadge("📌 Bookmarked!", "chess-trainer-pattern");
 };
 
+// ── Move Comparison ───────────────────────────────────────────────────────
+
+let comparisonTimeout = null;
+
+const parseEval = (scoreStr) => {
+  if (!scoreStr) return 0;
+  if (typeof scoreStr === "number") return scoreStr;
+  const s = String(scoreStr);
+  if (s.startsWith("Mate")) return s.includes("-") ? -100 : 100;
+  return parseFloat(s) || 0;
+};
+
+const formatUci = (uci) => {
+  if (!uci || uci.length < 4) return uci || "?";
+  const from = uci.slice(0, 2).toUpperCase();
+  const to = uci.slice(2, 4).toUpperCase();
+  return `${from}→${to}`;
+};
+
+const showMoveComparison = (engineRec, currentPayload) => {
+  if (!comparisonBadge || currentConfig.stealthMode) return;
+
+  const currentBest = currentPayload.bestMoves?.[0];
+  if (!currentBest) return;
+
+  const prevEval = parseEval(engineRec.score);
+  const currEval = parseEval(currentBest.score);
+
+  // Flip sign: if it was white's turn, a drop in eval means white played worse
+  // After the move, it's the opponent's turn, so the eval is from their perspective
+  const evalLoss = Math.abs(prevEval + currEval); // prev was from mover's view, curr is from opponent's
+
+  const engineMove = formatUci(engineRec.uci);
+
+  let emoji, color, text;
+  if (evalLoss < 0.1) {
+    emoji = "✅"; color = "#10b981"; text = `Best move! ${engineMove}`;
+  } else if (evalLoss < 0.5) {
+    emoji = "👍"; color = "#22d3ee"; text = `Good · Engine: ${engineMove} (−${evalLoss.toFixed(1)})`;
+  } else if (evalLoss < 1.5) {
+    emoji = "⚠️"; color = "#f59e0b"; text = `Inaccuracy · Engine: ${engineMove} (−${evalLoss.toFixed(1)})`;
+  } else if (evalLoss < 3.0) {
+    emoji = "❌"; color = "#f97316"; text = `Mistake · Engine: ${engineMove} (−${evalLoss.toFixed(1)})`;
+  } else {
+    emoji = "💀"; color = "#ef4444"; text = `Blunder · Engine: ${engineMove} (−${evalLoss.toFixed(1)})`;
+  }
+
+  comparisonBadge.textContent = `${emoji} ${text}`;
+  comparisonBadge.style.display = "block";
+  comparisonBadge.style.background = color;
+  comparisonBadge.style.color = evalLoss < 0.5 ? "#0f172a" : "#fff";
+
+  // In comparisonOnly mode: draw the engine's recommended arrow temporarily
+  if (currentConfig.comparisonOnly && engineRec.uci?.length >= 4) {
+    ensureOverlay(); clearArrows();
+    const from = engineRec.uci.slice(0, 2), to = engineRec.uci.slice(2, 4);
+    drawArrow(from, to, "", color, 0, 0.8, 1.1);
+  }
+
+  if (comparisonTimeout) clearTimeout(comparisonTimeout);
+  comparisonTimeout = setTimeout(() => {
+    if (comparisonBadge) comparisonBadge.style.display = "none";
+    if (currentConfig.comparisonOnly) clearArrows();
+  }, 2000);
+};
+
 // Enhanced analysis handler
 const handleAnalysis = (payload) => {
   if (!currentConfig.enabled || streamerHidden) return;
@@ -722,6 +814,39 @@ const handleAnalysis = (payload) => {
     if ((globalThis.moveHistory.fenHistory?.length || 0) % 10 === 0) updateOpponentProfile();
   }
 
+  // ── Comparison-Only Mode: hide everything, only show comparison ──
+  if (currentConfig.comparisonOnly) {
+    if (payload.partial) return; // skip partials
+
+    ensureOverlay();
+    // Hide all persistent overlays
+    if (evalBadge) evalBadge.style.display = "none";
+    if (wdlBar) wdlBar.style.display = "none";
+    if (openingPill) openingPill.style.display = "none";
+    if (classificationBadge) classificationBadge.style.display = "none";
+    if (tablebasePill) tablebasePill.style.display = "none";
+    if (puzzleBadge) puzzleBadge.style.display = "none";
+
+    const moves = payload?.bestMoves || [];
+
+    // Run move comparison
+    if (currentConfig.moveComparison && lastEngineRec && payload?.fen) {
+      const fenHistory = globalThis.moveHistory?.fenHistory || [];
+      if (fenHistory.length >= 2) {
+        const prevFen = fenHistory[fenHistory.length - 2];
+        if (lastEngineRec.fen && lastEngineRec.fen.split(" ").slice(0, 4).join(" ") === prevFen?.split(" ").slice(0, 4).join(" ")) {
+          showMoveComparison(lastEngineRec, payload);
+        }
+      }
+    }
+
+    // Store engine rec for next comparison
+    if (moves.length && payload?.fen) {
+      lastEngineRec = { uci: moves[0].uci, score: moves[0].score, fen: payload.fen };
+    }
+    return;
+  }
+
   // Player-side filter
   if (currentConfig.playerSide && currentConfig.playerSide !== "auto" && payload?.fen) {
     const active = payload.fen.split(" ")[1];
@@ -736,8 +861,56 @@ const handleAnalysis = (payload) => {
   ensureOverlay(); clearArrows();
   const moves = payload?.bestMoves || [];
   if (!moves.length) {
-    if (evalBadge && currentConfig.showEvalBadge) evalBadge.textContent = "–";
+    if (evalBadge && currentConfig.showEvalBadge && !currentConfig.hintMode) evalBadge.textContent = "–";
     renderWdlBar(null); return;
+  }
+
+  // ── Hint Mode: single arrow for 2 seconds, no persistent UI ──
+  if (currentConfig.hintMode) {
+    // Skip partial/progressive results in hint mode to avoid flicker
+    if (payload.partial) return;
+
+    // Hide all persistent overlays
+    if (evalBadge) evalBadge.style.display = "none";
+    if (wdlBar) wdlBar.style.display = "none";
+    if (openingPill) openingPill.style.display = "none";
+    if (classificationBadge) classificationBadge.style.display = "none";
+    if (tablebasePill) tablebasePill.style.display = "none";
+    if (puzzleBadge) puzzleBadge.style.display = "none";
+
+    // Draw one best-move arrow
+    const mv = moves[0];
+    if (mv?.uci?.length >= 4) {
+      const from = mv.uci.slice(0, 2), to = mv.uci.slice(2, 4);
+      drawArrow(from, to, "", "#10b981", 0, 0.7, 1.1);
+    }
+
+    // Auto-clear after 2 seconds
+    if (hintTimeout) clearTimeout(hintTimeout);
+    hintTimeout = setTimeout(() => clearArrows(), 2000);
+
+    // Still record engine rec for move comparison
+    if (moves.length && payload?.fen) {
+      lastEngineRec = { uci: moves[0].uci, score: moves[0].score, fen: payload.fen };
+    }
+
+    // Still do move comparison if enabled
+    if (currentConfig.moveComparison && lastEngineRec && payload?.fen) {
+      const fenHistory = globalThis.moveHistory?.fenHistory || [];
+      if (fenHistory.length >= 2) {
+        const prevFen = fenHistory[fenHistory.length - 2];
+        if (lastEngineRec.fen && lastEngineRec.fen.split(" ").slice(0, 4).join(" ") === prevFen?.split(" ").slice(0, 4).join(" ")) {
+          showMoveComparison(lastEngineRec, payload);
+        }
+      }
+    }
+
+    // Record eval for history
+    if (globalThis.moveHistory && payload?.fen) {
+      globalThis.moveHistory.recordEval(payload.fen, payload);
+    }
+
+    return;
   }
 
   // Best-move arrows — distinct colors + curves so they don't overlap
@@ -780,6 +953,27 @@ const handleAnalysis = (payload) => {
   checkTablebase(payload?.fen);
   checkGameEnd();
   checkTimeTrouble();
+
+  // ── Move Comparison: compare user's move vs engine's recommendation ──
+  if (currentConfig.moveComparison && lastEngineRec && payload?.fen && !payload.partial) {
+    const fenHistory = globalThis.moveHistory?.fenHistory || [];
+    if (fenHistory.length >= 2) {
+      const prevFen = fenHistory[fenHistory.length - 2];
+      // Only compare if the engine recommendation was for the previous position
+      if (lastEngineRec.fen && lastEngineRec.fen.split(" ").slice(0, 4).join(" ") === prevFen?.split(" ").slice(0, 4).join(" ")) {
+        showMoveComparison(lastEngineRec, payload);
+      }
+    }
+  }
+
+  // Store current engine recommendation for next comparison
+  if (!payload.partial && moves.length && payload?.fen) {
+    lastEngineRec = {
+      uci: moves[0].uci,
+      score: moves[0].score,
+      fen: payload.fen,
+    };
+  }
 };
 
 // ── State sending ─────────────────────────────────────────────────────────
@@ -815,6 +1009,17 @@ const applyConfig = (config) => {
     if (evalBadge) evalBadge.textContent = "⏸";
     if (wdlBar) wdlBar.style.display = "none";
   }
+  // Stealth mode: hide everything except the SVG overlay (dots only)
+  if (currentConfig.stealthMode) {
+    if (evalBadge) evalBadge.style.display = "none";
+    if (wdlBar) wdlBar.style.display = "none";
+    if (openingPill) openingPill.style.display = "none";
+    if (classificationBadge) classificationBadge.style.display = "none";
+    if (tablebasePill) tablebasePill.style.display = "none";
+    if (puzzleBadge) puzzleBadge.style.display = "none";
+    if (comparisonBadge) comparisonBadge.style.display = "none";
+    return;
+  }
   if (!currentConfig.showWdlBar && wdlBar) wdlBar.style.display = "none";
   if (!currentConfig.showOpeningName && openingPill) openingPill.style.display = "none";
   if (!currentConfig.showEvalBadge && evalBadge) evalBadge.style.display = "none";
@@ -837,6 +1042,7 @@ const handleKeyboard = (e) => {
     if (lastAnalysisPayload) handleAnalysis(lastAnalysisPayload);
   }
   if (k === "h") { e.preventDefault(); toggleStreamerMode(); if (!streamerHidden) forceAnalyze(); }
+  if (k === "d") { e.preventDefault(); currentConfig.stealthMode = !currentConfig.stealthMode; applyConfig(currentConfig); try { chrome.runtime.sendMessage({ type: "saveConfig", config: currentConfig }); } catch {} if (lastAnalysisPayload) handleAnalysis(lastAnalysisPayload); }
   if (k === "b") { e.preventDefault(); bookmarkPosition(); }
   if (k === "s") { e.preventDefault(); takeScreenshot(); }
 };

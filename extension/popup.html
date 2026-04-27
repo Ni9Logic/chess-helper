@@ -11,7 +11,7 @@
   <div id="app">
     <header>
       <h1>♟ Chess Trainer</h1>
-      <span class="version">v0.3.0</span>
+      <span class="version">v0.4.0</span>
     </header>
 
     <!-- Tab Navigation -->
@@ -35,6 +35,8 @@
           <option value="3">3</option>
           <option value="5">5</option>
         </select></label>
+      <label class="row"><span>Search Mode</span><select id="searchMode"><option value="depth">Depth</option><option value="time">Time</option></select></label>
+      <label class="row"><span>Time (ms)</span><input type="range" id="searchTime" min="1000" max="10000" step="500"><span id="searchTimeVal" class="range-val"></span></label>
 
       <div class="section-label">Overlays</div>
       <label class="row"><span>Eval Badge</span><input type="checkbox" id="showEvalBadge"></label>
@@ -50,6 +52,8 @@
       <label class="row"><span>Time Trouble Alert</span><input type="checkbox" id="timeTroubleAlert"></label>
       <label class="row"><span>Endgame Tablebase</span><input type="checkbox" id="endgameTablebase"></label>
       <label class="row"><span>Opponent Profiler</span><input type="checkbox" id="opponentProfiler"></label>
+      <label class="row"><span>Move Comparison</span><input type="checkbox" id="moveComparison"></label>
+      <label class="row"><span>Comparison Only</span><input type="checkbox" id="comparisonOnly"></label>
 
       <div class="section-label">Training</div>
       <label class="row"><span>Move Explanations</span><input type="checkbox" id="moveExplanations"></label>
@@ -65,6 +69,9 @@
 
       <div class="section-label">Appearance</div>
       <label class="row"><span>Dark Theme</span><input type="checkbox" id="darkTheme"></label>
+      <label class="row"><span>Stealth Mode (dots)</span><input type="checkbox" id="stealthMode"></label>
+      <label class="row"><span>Dot Size</span><input type="range" id="stealthDotSize" min="0.3" max="2.0" step="0.1"><span id="dotSizeVal" class="range-val"></span></label>
+      <label class="row"><span>Dot Opacity</span><input type="range" id="stealthDotOpacity" min="0.05" max="0.5" step="0.01"><span id="dotOpacityVal" class="range-val"></span></label>
       <label class="row"><span>Lichess Support</span><input type="checkbox" id="enableLichess"></label>
 
       <div class="actions-row">
@@ -93,6 +100,7 @@
         <div class="sc"><kbd>Alt+H</kbd> Streamer mode</div>
         <div class="sc"><kbd>Alt+B</kbd> Bookmark position</div>
         <div class="sc"><kbd>Alt+S</kbd> Screenshot arrows</div>
+        <div class="sc"><kbd>Alt+D</kbd> Stealth mode</div>
         <div class="sc"><kbd>Right-click</kbd> Context menu</div>
       </div>
     </div>

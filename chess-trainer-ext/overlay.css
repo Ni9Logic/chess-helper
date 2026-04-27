@@ -1,0 +1,311 @@
+#chess-trainer-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Arrow fade-in animation */
+#chess-trainer-overlay.ct-fade-in {
+  animation: ctFadeIn 0.3s ease-out;
+}
+
+@keyframes ctFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+#chess-trainer-eval {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(16, 185, 129, 0.88);
+  color: #0f172a;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 7px;
+  font-size: 11px;
+  line-height: 1.1;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.18);
+  z-index: 10000;
+  pointer-events: none;
+}
+
+/* ── Move Comparison Badge ────────────────────── */
+#chess-trainer-comparison {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'Inter', -apple-system, sans-serif;
+  white-space: nowrap;
+  z-index: 10001;
+  pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  animation: ctSlideUp 0.3s ease-out;
+}
+
+@keyframes ctSlideUp {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── WDL Bar ──────────────────────────────────── */
+#chess-trainer-wdl {
+  position: absolute;
+  top: 28px;
+  right: 6px;
+  width: 60px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  display: flex;
+  z-index: 10000;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+#chess-trainer-wdl .wdl-w {
+  background: #f1f5f9;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+#chess-trainer-wdl .wdl-d {
+  background: #64748b;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+#chess-trainer-wdl .wdl-l {
+  background: #1e293b;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+/* ── Opening Name ─────────────────────────────── */
+#chess-trainer-opening {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #e2e8f0;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 5px;
+  z-index: 10000;
+  pointer-events: none;
+  max-width: 70%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ── Move Classification Badge ────────────────── */
+#chess-trainer-classification {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 28px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 3px solid currentColor;
+  z-index: 10001;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+/* ── Time Trouble ─────────────────────────────── */
+.ct-time-trouble {
+  animation: ctTimeTrouble 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes ctTimeTrouble {
+  from {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+
+  to {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.5);
+  }
+}
+
+/* ── Tablebase Pill ───────────────────────────── */
+#chess-trainer-tablebase {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 5px;
+  z-index: 10000;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ── Puzzle Badge ─────────────────────────────── */
+#chess-trainer-puzzle {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(245, 158, 11, 0.9);
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 900;
+  padding: 6px 16px;
+  border-radius: 12px;
+  z-index: 10001;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Temp Badge (pattern, explanation) ─────────── */
+.ct-temp-badge {
+  position: absolute;
+  bottom: 22px;
+  left: 6px;
+  background: rgba(15, 23, 42, 0.85);
+  color: #e2e8f0;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 5px;
+  z-index: 10000;
+  pointer-events: none;
+  max-width: 80%;
+  transition: opacity 0.4s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+#chess-trainer-explanation {
+  bottom: 38px;
+  background: rgba(99, 102, 241, 0.85);
+  color: #fff;
+}
+
+/* ── Opponent Profile ─────────────────────────── */
+#chess-trainer-profile {
+  position: absolute;
+  top: 40px;
+  right: 6px;
+  background: rgba(15, 23, 42, 0.85);
+  color: #e2e8f0;
+  font-size: 9px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  z-index: 10000;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.ct-profile-style {
+  font-weight: 700;
+  font-size: 10px;
+}
+
+.ct-profile-stat {
+  color: #94a3b8;
+}
+
+/* ── Post-Game Summary ────────────────────────── */
+#chess-trainer-summary {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10002;
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
+
+.ct-summary-card {
+  background: #1e293b;
+  border-radius: 14px;
+  padding: 16px 20px;
+  min-width: 200px;
+  max-width: 260px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  color: #e2e8f0;
+}
+
+.ct-summary-header {
+  font-size: 14px;
+  font-weight: 800;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.ct-summary-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ct-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.ct-val {
+  font-weight: 700;
+}
+
+.ct-brilliant {
+  color: #26bfa5;
+}
+
+.ct-blunder {
+  color: #ca3431;
+}
+
+.ct-mistake {
+  color: #e68a32;
+}
+
+.ct-summary-close {
+  display: block;
+  margin: 10px auto 0;
+  background: rgba(148, 163, 184, 0.2);
+  border: none;
+  color: #94a3b8;
+  font-size: 11px;
+  padding: 6px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ct-summary-close:hover {
+  background: rgba(148, 163, 184, 0.3);
+  color: #e2e8f0;
+}

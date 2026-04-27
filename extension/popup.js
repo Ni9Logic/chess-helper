@@ -6,9 +6,9 @@ const FIELDS = [
   "enabled", "autoAnalyze", "showEvalBadge", "showTopArrows", "showPvLine",
   "arrowAnimation", "showThreatArrow", "showWdlBar", "showOpeningName",
   "showMoveClassification", "timeTroubleAlert", "endgameTablebase",
-  "opponentProfiler", "moveExplanations", "puzzleMode", "patternRecognition",
+  "opponentProfiler", "moveComparison", "comparisonOnly", "moveExplanations", "puzzleMode", "patternRecognition",
   "postGameSummary", "blunderSound", "pauseOnPremove", "keyboardShortcuts",
-  "positionBookmarks", "darkTheme", "enableLichess",
+  "positionBookmarks", "darkTheme", "stealthMode", "enableLichess",
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -38,6 +38,14 @@ const buildConfig = () => {
   if (depth) config.depth = Number(depth.value);
   const multipv = $("multipv");
   if (multipv) config.multipv = Number(multipv.value);
+  const dotSize = $("stealthDotSize");
+  if (dotSize) config.stealthDotSize = Number(dotSize.value);
+  const dotOpacity = $("stealthDotOpacity");
+  if (dotOpacity) config.stealthDotOpacity = Number(dotOpacity.value);
+  const searchTime = $("searchTime");
+  if (searchTime) config.searchTime = Number(searchTime.value);
+  const searchMode = $("searchMode");
+  if (searchMode) config.searchMode = searchMode.value;
   return config;
 };
 
@@ -55,6 +63,23 @@ const applyConfig = (config) => {
   }
   const multipv = $("multipv");
   if (multipv && config.multipv) multipv.value = String(config.multipv);
+  const dotSize = $("stealthDotSize");
+  if (dotSize && config.stealthDotSize != null) {
+    dotSize.value = config.stealthDotSize;
+    $("dotSizeVal").textContent = config.stealthDotSize;
+  }
+  const dotOpacity = $("stealthDotOpacity");
+  if (dotOpacity && config.stealthDotOpacity != null) {
+    dotOpacity.value = config.stealthDotOpacity;
+    $("dotOpacityVal").textContent = config.stealthDotOpacity;
+  }
+  const searchTime = $("searchTime");
+  if (searchTime && config.searchTime != null) {
+    searchTime.value = config.searchTime;
+    $("searchTimeVal").textContent = config.searchTime;
+  }
+  const searchMode = $("searchMode");
+  if (searchMode && config.searchMode) searchMode.value = config.searchMode;
 
   // Theme
   document.body.classList.toggle("light", !config.darkTheme);
@@ -86,7 +111,8 @@ document.addEventListener("DOMContentLoaded", () => {
       debouncedSave();
     });
     if (el.type === "range") {
-      el.addEventListener("input", () => { $("depthVal").textContent = el.value; });
+      const labelMap = { depth: "depthVal", stealthDotSize: "dotSizeVal", stealthDotOpacity: "dotOpacityVal", searchTime: "searchTimeVal" };
+      el.addEventListener("input", () => { const lbl = labelMap[el.id]; if (lbl) $(lbl).textContent = el.value; debouncedSave(); });
     }
   });
 });

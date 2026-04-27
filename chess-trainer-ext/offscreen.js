@@ -1,0 +1,233 @@
+// ---------------------------------------------------------------------------
+// Offscreen Stockfish Engine Manager
+// Runs in an offscreen document (invisible page). Spawns Stockfish as a
+// Web Worker and relays UCI commands from the background service worker.
+// ---------------------------------------------------------------------------
+
+let worker = null;
+let currentJob = null;
+let lines = {};       // multipv → best info line
+let bestmove = null;
+let jobTimeout = null;
+let lastProgressDepth = 0;
+let isNewGame = true;  // only send ucinewgame on actual new games
+
+const startWorker = () => {
+    if (worker) return;
+    worker = new Worker(chrome.runtime.getURL("engine/stockfish.js"));
+    worker.onmessage = (e) => onEngineLine(e.data);
+    worker.onerror = (e) => {
+        console.error("Stockfish worker error:", e);
+        worker = null;
+    };
+    // Initialize UCI + set hash size for better caching
+    worker.postMessage("uci");
+};
+
+const sendCmd = (cmd) => {
+    if (!worker) startWorker();
+    worker.postMessage(cmd);
+};
+
+const collectBestMoves = (job) => {
+    return Object.values(lines)
+        .sort((a, b) => (a.multipv ?? 1) - (b.multipv ?? 1))
+        .map((l) => ({
+            uci: l.move ?? "",
+            score: l.score ?? "0.00",
+            depth: l.depth ?? job.depth,
+            pv: l.pv ?? [],
+            wdl: l.wdl ?? undefined,
+        }))
+        .filter((m) => m.uci);
+};
+
+const onEngineLine = (text) => {
+    if (typeof text !== "string") return;
+    const line = text.trim();
+
+    if (!currentJob) return;
+    if (line === "uciok" || line === "readyok") return;
+
+    if (line.startsWith("info ")) {
+        const parts = line.split(/\s+/);
+        const idx = (key) => parts.indexOf(key);
+        const info = {};
+
+        const depthIdx = idx("depth");
+        if (depthIdx > -1) info.depth = Number(parts[depthIdx + 1]);
+
+        // Skip very shallow depths and seldepth-only lines
+        if (info.depth !== undefined && info.depth < 2) return;
+
+        const multipvIdx = idx("multipv");
+        if (multipvIdx > -1) info.multipv = Number(parts[multipvIdx + 1]);
+
+        const scoreIdx = idx("score");
+        if (scoreIdx > -1) {
+            const type = parts[scoreIdx + 1];
+            const rawVal = Number(parts[scoreIdx + 2]);
+            info.score = type === "cp" ? (rawVal / 100).toFixed(2) : `Mate ${rawVal}`;
+        }
+
+        const wdlIdx = idx("wdl");
+        if (wdlIdx > -1 && parts.length > wdlIdx + 3) {
+            info.wdl = {
+                win: Number(parts[wdlIdx + 1]),
+                draw: Number(parts[wdlIdx + 2]),
+                loss: Number(parts[wdlIdx + 3]),
+            };
+        }
+
+        const pvIdx = idx("pv");
+        if (pvIdx > -1) info.pv = parts.slice(pvIdx + 1);
+        const moveIdx = pvIdx > -1 ? pvIdx + 1 : -1;
+        if (moveIdx > -1) info.move = parts[moveIdx];
+
+        const key = info.multipv ?? 1;
+        if (info.depth !== undefined && info.score && info.move) {
+            const existing = lines[key];
+            if (!existing || (existing.depth ?? 0) <= info.depth) {
+                lines[key] = info;
+            }
+        }
+
+        // ── Progressive results: send partial updates every 3 depth levels ──
+        if (info.depth !== undefined && info.depth >= 6 &&
+            info.depth - lastProgressDepth >= 3 && key === 1) {
+            lastProgressDepth = info.depth;
+            const bestMoves = collectBestMoves(currentJob);
+            if (bestMoves.length) {
+                chrome.runtime.sendMessage({
+                    type: "engineResult",
+                    id: currentJob.id,
+                    bestMoves,
+                    partial: true,
+                    currentDepth: info.depth,
+                    targetDepth: currentJob.depth,
+                });
+            }
+        }
+    }
+
+    if (line.startsWith("bestmove")) {
+        bestmove = line.split(/\s+/)[1];
+        finishJob();
+    }
+};
+
+const finishJob = () => {
+    if (jobTimeout) { clearTimeout(jobTimeout); jobTimeout = null; }
+    const job = currentJob;
+    if (!job) return;
+    currentJob = null;
+
+    if (job.aborted) {
+        // Even on abort, send whatever we have so far
+        const bestMoves = collectBestMoves(job);
+        chrome.runtime.sendMessage({
+            type: "engineResult",
+            id: job.id,
+            bestMoves: bestMoves.length ? bestMoves : [],
+            aborted: true,
+        });
+        return;
+    }
+
+    const bestMoves = collectBestMoves(job);
+
+    if (!bestMoves.length && bestmove) {
+        bestMoves.push({ uci: bestmove, score: "0.00", depth: job.depth, pv: [bestmove] });
+    }
+
+    chrome.runtime.sendMessage({
+        type: "engineResult",
+        id: job.id,
+        bestMoves,
+    });
+};
+
+// Listen for commands from background.js
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === "engineAnalyze") {
+        // Cancel current job if any
+        if (currentJob) {
+            currentJob.aborted = true;
+            sendCmd("stop");
+        }
+
+        const job = {
+            id: msg.id,
+            fen: msg.fen,
+            depth: msg.depth || 12,
+            multipv: msg.multipv || 3,
+            skillLevel: msg.skillLevel ?? 20,
+            searchMode: msg.searchMode || "depth",
+            searchTime: msg.searchTime || 3000,
+            aborted: false,
+        };
+
+        currentJob = job;
+        lines = {};
+        bestmove = null;
+        lastProgressDepth = 0;
+
+        if (!worker) startWorker();
+
+        sendCmd(`setoption name MultiPV value ${job.multipv}`);
+        sendCmd(`setoption name Skill Level value ${job.skillLevel}`);
+        sendCmd("setoption name UCI_ShowWDL value true");
+        // Set hash to 128MB for better transposition table performance
+        sendCmd("setoption name Hash value 128");
+
+        // Only clear hash on new game, not every position
+        if (isNewGame) {
+            sendCmd("ucinewgame");
+            isNewGame = false;
+        }
+        sendCmd("isready");
+
+        // Small delay to let isready process, then send position + go
+        setTimeout(() => {
+            if (currentJob !== job || job.aborted) return;
+            sendCmd(`position fen ${job.fen}`);
+            if (job.searchMode === "time") {
+                sendCmd(`go movetime ${job.searchTime}`);
+            } else {
+                sendCmd(`go depth ${job.depth}`);
+            }
+        }, 20);
+
+        // Timeout: for time mode use searchTime + 5s buffer; for depth mode 3s/depth
+        const timeout = job.searchMode === "time"
+            ? job.searchTime + 5000
+            : Math.min(120000, Math.max(20000, job.depth * 3000));
+        jobTimeout = setTimeout(() => {
+            if (currentJob === job && !job.aborted) {
+                // Don't abort — just send stop and let bestmove come through
+                sendCmd("stop");
+            }
+        }, timeout);
+
+        sendResponse({ ok: true });
+        return;
+    }
+
+    if (msg?.type === "engineStop") {
+        if (currentJob) {
+            currentJob.aborted = true;
+            sendCmd("stop");
+        }
+        sendResponse({ ok: true });
+        return;
+    }
+
+    if (msg?.type === "engineNewGame") {
+        isNewGame = true;
+        sendResponse({ ok: true });
+        return;
+    }
+});
+
+// Start the engine immediately
+startWorker();

@@ -134,10 +134,98 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 let latestRequestId = null;
 let latestTabId = null;
 let latestFen = null;
+let lastFenTime = 0;
+
+// ── Position Cache (LRU, 30 entries) ──────────────────────────────────
+
+const CACHE_MAX = 30;
+const positionCache = new Map(); // key: "fen|depth|multipv" → { bestMoves, timestamp }
+
+const cacheKey = (fen, depth, multipv) => `${fen.split(" ").slice(0, 4).join(" ")}|${depth}|${multipv}`;
+
+const cacheGet = (fen, depth, multipv) => {
+  // Check for exact or higher-depth match
+  for (let d = 20; d >= depth; d--) {
+    const key = cacheKey(fen, d, multipv);
+    if (positionCache.has(key)) {
+      const entry = positionCache.get(key);
+      // LRU: move to end
+      positionCache.delete(key);
+      positionCache.set(key, entry);
+      return entry;
+    }
+  }
+  return null;
+};
+
+const cacheSet = (fen, depth, multipv, bestMoves) => {
+  const key = cacheKey(fen, depth, multipv);
+  positionCache.set(key, { bestMoves, timestamp: Date.now() });
+  // Evict oldest if over limit
+  if (positionCache.size > CACHE_MAX) {
+    const oldest = positionCache.keys().next().value;
+    positionCache.delete(oldest);
+  }
+};
+
+// ── Smart Depth Scaling ───────────────────────────────────────────────
+
+const smartDepth = (fen, configuredDepth) => {
+  const parts = fen.split(" ");
+  const board = parts[0] || "";
+  const moveNum = parseInt(parts[5] || "1", 10);
+  const pieceCount = (board.match(/[pnbrqkPNBRQK]/g) || []).length;
+
+  // Endgame: fewer pieces = faster search, keep configured depth
+  if (pieceCount <= 10) return configuredDepth;
+
+  // Early opening (moves 1-6): book territory, cap at 10
+  if (moveNum <= 6 && configuredDepth > 10) return 10;
+
+  // Early middlegame (moves 7-12): cap at configured - 2
+  if (moveNum <= 12 && configuredDepth > 14) return configuredDepth - 2;
+
+  return configuredDepth;
+};
+
+// ── Analysis Handler ──────────────────────────────────────────────────
 
 const handleFen = async (fen, tabId) => {
   const config = await loadConfig();
   if (!config.enabled || !config.autoAnalyze) return;
+
+  const effectiveDepth = smartDepth(fen, config.depth);
+  const isTimeMode = config.searchMode === "time";
+
+  // Rapid-move debounce: skip if last request was < 400ms ago (unless cached)
+  const now = Date.now();
+  if (lastFenTime && now - lastFenTime < 400) {
+    const cached = cacheGet(fen, effectiveDepth, config.multipv);
+    if (cached) {
+      const payload = { type: "analysis", source: "cache", fen, generatedAt: now, bestMoves: cached.bestMoves };
+      if (tabId) chrome.tabs.sendMessage(tabId, { ...payload, config });
+      return;
+    }
+    // Too fast, skip this position
+    return;
+  }
+  lastFenTime = now;
+
+  // Check cache first — instant result if available
+  const cached = cacheGet(fen, effectiveDepth, config.multipv);
+  if (cached) {
+    const payload = {
+      type: "analysis",
+      source: "cache",
+      fen,
+      generatedAt: Date.now(),
+      bestMoves: cached.bestMoves,
+    };
+    if (tabId) chrome.tabs.sendMessage(tabId, { ...payload, config });
+    chrome.action.setBadgeText({ text: "⚡" });
+    chrome.action.setBadgeBackgroundColor({ color: "#10b981" });
+    return;
+  }
 
   await ensureOffscreen();
 
@@ -149,8 +237,9 @@ const handleFen = async (fen, tabId) => {
   try {
     const resultPromise = new Promise((resolve, reject) => {
       pendingRequests[id] = { resolve, reject };
-      // Generous timeout: match the offscreen timeout
-      const timeout = Math.min(130000, Math.max(25000, config.depth * 3500));
+      const timeout = isTimeMode
+        ? (config.searchTime || 3000) + 8000
+        : Math.min(130000, Math.max(25000, effectiveDepth * 3500));
       setTimeout(() => {
         if (pendingRequests[id]) {
           delete pendingRequests[id];
@@ -163,9 +252,11 @@ const handleFen = async (fen, tabId) => {
       type: "engineAnalyze",
       id,
       fen,
-      depth: config.depth,
+      depth: effectiveDepth,
       multipv: config.multipv,
       skillLevel: config.skillLevel,
+      searchMode: config.searchMode || "depth",
+      searchTime: config.searchTime || 3000,
     });
 
     const result = await resultPromise;
@@ -173,16 +264,21 @@ const handleFen = async (fen, tabId) => {
     // Discard stale results
     if (id !== latestRequestId) return;
 
-    if (result.bestMoves?.length && tabId) {
-      const payload = {
-        type: "analysis",
-        source: "local",
-        fen,
-        generatedAt: Date.now(),
-        id,
-        bestMoves: result.bestMoves,
-      };
-      chrome.tabs.sendMessage(tabId, { ...payload, config });
+    if (result.bestMoves?.length) {
+      // Store in cache
+      cacheSet(fen, effectiveDepth, config.multipv, result.bestMoves);
+
+      if (tabId) {
+        const payload = {
+          type: "analysis",
+          source: "local",
+          fen,
+          generatedAt: Date.now(),
+          id,
+          bestMoves: result.bestMoves,
+        };
+        chrome.tabs.sendMessage(tabId, { ...payload, config });
+      }
     }
 
     chrome.action.setBadgeText({ text: config.enabled ? "ON" : "OFF" });
